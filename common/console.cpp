@@ -60,6 +60,7 @@ namespace console {
         static constexpr char32_t KEY_CTRL_ARROW_LEFT  = 0xE006;
         static constexpr char32_t KEY_CTRL_ARROW_RIGHT = 0xE007;
         static constexpr char32_t KEY_DELETE           = 0xE008;
+        static constexpr char32_t KEY_ALT_ENTER        = 0xE009;
     }
 
     //
@@ -79,6 +80,8 @@ namespace console {
     static FILE*        tty              = nullptr;
     static termios      initial_state;
 #endif
+
+    static bool         bracket_paste_mode = false;  // true when inside ESC[200~ ... ESC[201~
 
     //
     // Init and cleanup
@@ -140,6 +143,10 @@ namespace console {
             if (tty != nullptr) {
                 out = tty;
             }
+
+            // Enable bracket paste mode - terminal wraps pastes with ESC[200~ and ESC[201~
+            fprintf(out, "\033[?2004h");
+            fflush(out);
         }
 
         setlocale(LC_ALL, "");
@@ -153,6 +160,10 @@ namespace console {
 #if !defined(_WIN32)
         // Restore settings on POSIX systems
         if (!simple_io) {
+            // Disable bracket paste mode
+            fprintf(out, "\033[?2004l");
+            fflush(out);
+
             if (tty != nullptr) {
                 out = stdout;
                 fclose(tty);
@@ -209,9 +220,17 @@ namespace console {
 
             if (record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown) {
                 wchar_t wc = record.Event.KeyEvent.uChar.UnicodeChar;
+                const DWORD ctrl_mask = LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED;
+                const DWORD alt_mask = LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED;
+                const bool ctrl_pressed = (record.Event.KeyEvent.dwControlKeyState & ctrl_mask) != 0;
+                const bool alt_pressed = (record.Event.KeyEvent.dwControlKeyState & alt_mask) != 0;
+
+                // Alt+Enter = insert newline (like Option+Enter on macOS)
+                if (alt_pressed && record.Event.KeyEvent.wVirtualKeyCode == VK_RETURN) {
+                    return KEY_ALT_ENTER;
+                }
+
                 if (wc == 0) {
-                    const DWORD ctrl_mask = LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED;
-                    const bool ctrl_pressed = (record.Event.KeyEvent.dwControlKeyState & ctrl_mask) != 0;
                     switch (record.Event.KeyEvent.wVirtualKeyCode) {
                         case VK_LEFT:   return ctrl_pressed ? KEY_CTRL_ARROW_LEFT  : KEY_ARROW_LEFT;
                         case VK_RIGHT:  return ctrl_pressed ? KEY_CTRL_ARROW_RIGHT : KEY_ARROW_RIGHT;
@@ -564,6 +583,35 @@ namespace console {
         return false;
     }
 
+    static bool has_alt_modifier(const std::string & params) {
+        size_t start = 0;
+        while (start < params.size()) {
+            size_t end = params.find(';', start);
+            size_t len = (end == std::string::npos) ? params.size() - start : end - start;
+            if (len > 0) {
+                int value = 0;
+                for (size_t i = 0; i < len; ++i) {
+                    char ch = params[start + i];
+                    if (!std::isdigit(static_cast<unsigned char>(ch))) {
+                        value = -1;
+                        break;
+                    }
+                    value = value * 10 + (ch - '0');
+                }
+                // Alt/Meta is bit 1 in modifier encoding: values 3, 7, 9, 11, etc.
+                if (value >= 3 && (value & 2)) {
+                    return true;
+                }
+            }
+
+            if (end == std::string::npos) {
+                break;
+            }
+            start = end + 1;
+        }
+        return false;
+    }
+
     static bool is_space_codepoint(char32_t cp) {
         return std::iswspace(static_cast<wint_t>(cp)) != 0;
     }
@@ -749,6 +797,7 @@ namespace console {
         std::vector<int> widths;
         bool is_special_char = false;
         bool end_of_stream = false;
+        bracket_paste_mode = false; // reset paste state for each readline
 
         size_t byte_pos = 0; // current byte index
         size_t char_pos = 0; // current character index (one char can be multiple bytes)
@@ -781,6 +830,16 @@ namespace console {
             input_char = getchar32();
 
             if (input_char == '\r' || input_char == '\n') {
+                if (bracket_paste_mode) {
+                    // Insert literal newline during paste, show continuation prompt
+                    line.insert(byte_pos, "\n");
+                    widths.insert(widths.begin() + char_pos, 0);
+                    byte_pos++;
+                    char_pos++;
+                    fprintf(out, "\n> ");
+                    fflush(out);
+                    continue;
+                }
                 break;
             }
 
@@ -857,9 +916,21 @@ namespace console {
                                 move_to_line_end(char_pos, byte_pos, widths, line);
                             } else if (digits == "3") { // delete
                                 delete_at_cursor(line, widths, char_pos, byte_pos);
+                            } else if (digits == "200") { // bracket paste start
+                                bracket_paste_mode = true;
+                            } else if (digits == "201") { // bracket paste end
+                                bracket_paste_mode = false;
                             }
                         }
                     }
+                } else if (code == '\r' || code == '\n') {
+                    // ESC + Enter = Option+Enter on macOS: insert literal newline
+                    line.insert(byte_pos, "\n");
+                    widths.insert(widths.begin() + char_pos, 0);
+                    byte_pos++;
+                    char_pos++;
+                    fprintf(out, "\n> ");
+                    fflush(out);
                 } else if (code == 0x1B) {
                     // Discard the rest of the escape sequence
                     while ((code = getchar32()) != (char32_t) WEOF) {
@@ -893,6 +964,14 @@ namespace console {
                 move_to_line_end(char_pos, byte_pos, widths, line);
             } else if (input_char == KEY_DELETE) {
                 delete_at_cursor(line, widths, char_pos, byte_pos);
+            } else if (input_char == KEY_ALT_ENTER) {
+                // Alt+Enter = insert literal newline with continuation prompt
+                line.insert(byte_pos, "\n");
+                widths.insert(widths.begin() + char_pos, 0);
+                byte_pos++;
+                char_pos++;
+                fprintf(out, "\n> ");
+                fflush(out);
             } else if (input_char == KEY_ARROW_UP || input_char == KEY_ARROW_DOWN) {
                 if (input_char == KEY_ARROW_UP) {
                     history_prev();
@@ -971,7 +1050,7 @@ namespace console {
                 }
             }
 
-            if (!line.empty() && (line.back() == '\\' || line.back() == '/')) {
+            if (!bracket_paste_mode && !line.empty() && (line.back() == '\\' || line.back() == '/')) {
                 replace_last(line.back());
                 is_special_char = true;
             }
