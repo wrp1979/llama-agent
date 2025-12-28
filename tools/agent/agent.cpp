@@ -222,7 +222,7 @@ int main(int argc, char ** argv) {
         ctx_server.start_loop();
     });
 
-    auto inf = ctx_server.get_info();
+    auto inf = ctx_server.get_meta();
 
     // Get working directory
     std::string working_dir = fs::current_path().string();
