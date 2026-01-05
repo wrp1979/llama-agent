@@ -228,172 +228,6 @@ void agent_loop::clear() {
     permission_mgr_.clear_session();
 }
 
-// Parse a single function block: <function=name>...<parameter=key>value</parameter>...</function>
-static bool parse_function_block(const std::string & block, common_chat_tool_call & tc) {
-    // Parse function name: <function=name>
-    size_t func_start = block.find("<function=");
-    if (func_start == std::string::npos) return false;
-
-    size_t func_name_start = func_start + 10;
-    size_t func_name_end = block.find(">", func_name_start);
-    if (func_name_end == std::string::npos) return false;
-
-    tc.name = block.substr(func_name_start, func_name_end - func_name_start);
-
-    // Find function block end
-    size_t func_end = block.find("</function>", func_name_end);
-    if (func_end == std::string::npos) func_end = block.size();
-
-    std::string func_body = block.substr(func_name_end + 1, func_end - func_name_end - 1);
-
-    // Parse parameters
-    json args = json::object();
-    size_t param_pos = 0;
-    while ((param_pos = func_body.find("<parameter=", param_pos)) != std::string::npos) {
-        size_t param_name_start = param_pos + 11;
-        size_t param_name_end = func_body.find(">", param_name_start);
-        if (param_name_end == std::string::npos) break;
-
-        std::string param_name = func_body.substr(param_name_start, param_name_end - param_name_start);
-
-        // Find parameter value (between > and </parameter> or next <parameter=)
-        size_t value_start = param_name_end + 1;
-        // Skip leading newline if present
-        if (value_start < func_body.size() && func_body[value_start] == '\n') {
-            value_start++;
-        }
-
-        size_t param_end = func_body.find("</parameter>", value_start);
-        size_t next_param = func_body.find("<parameter=", value_start);
-
-        size_t value_end;
-        if (param_end != std::string::npos && (next_param == std::string::npos || param_end < next_param)) {
-            value_end = param_end;
-        } else if (next_param != std::string::npos) {
-            value_end = next_param;
-        } else {
-            value_end = func_body.size();
-        }
-
-        std::string param_value = func_body.substr(value_start, value_end - value_start);
-        // Trim trailing newline/whitespace
-        while (!param_value.empty() && (param_value.back() == '\n' || param_value.back() == '\r')) {
-            param_value.pop_back();
-        }
-        // Trim leading/trailing whitespace for type inference
-        std::string trimmed = param_value;
-        while (!trimmed.empty() && std::isspace(trimmed.front())) trimmed.erase(0, 1);
-        while (!trimmed.empty() && std::isspace(trimmed.back())) trimmed.pop_back();
-
-        // Convert to appropriate JSON type
-        std::string lower_trimmed = trimmed;
-        for (auto & c : lower_trimmed) c = std::tolower(c);
-
-        if (lower_trimmed == "true") {
-            args[param_name] = true;
-        } else if (lower_trimmed == "false") {
-            args[param_name] = false;
-        } else {
-            // Try to parse as number
-            bool is_number = !trimmed.empty();
-            bool has_dot = false;
-            for (size_t i = 0; i < trimmed.size(); i++) {
-                char c = trimmed[i];
-                if (c == '-' && i == 0) continue;
-                if (c == '.' && !has_dot) { has_dot = true; continue; }
-                if (!std::isdigit(c)) { is_number = false; break; }
-            }
-            if (is_number && !trimmed.empty() && trimmed != "-" && trimmed != ".") {
-                if (has_dot) {
-                    args[param_name] = std::stod(trimmed);
-                } else {
-                    args[param_name] = std::stoll(trimmed);
-                }
-            } else {
-                args[param_name] = param_value;
-            }
-        }
-        param_pos = value_end;
-    }
-
-    tc.arguments = args.dump();
-    return true;
-}
-
-// Parse tool calls from qwen3-coder/nemotron XML format
-// Supports both:
-//   <tool_call><function=name>...</function></tool_call>
-//   <function=name>...</function> (without wrapper)
-static common_chat_msg parse_tool_calls_xml(const std::string & content) {
-    common_chat_msg msg;
-    msg.role = "assistant";
-
-    std::string remaining = content;
-
-    // First, try to find <tool_call> wrapped format
-    size_t tool_call_start = remaining.find("<tool_call>");
-    // If no <tool_call>, look for bare <function= tags
-    size_t func_start = remaining.find("<function=");
-
-    // Determine the earliest tool/function occurrence
-    size_t first_tool = std::string::npos;
-    bool has_wrapper = false;
-    if (tool_call_start != std::string::npos && (func_start == std::string::npos || tool_call_start < func_start)) {
-        first_tool = tool_call_start;
-        has_wrapper = true;
-    } else if (func_start != std::string::npos) {
-        first_tool = func_start;
-        has_wrapper = false;
-    }
-
-    // Extract content before any tool calls
-    if (first_tool != std::string::npos) {
-        msg.content = remaining.substr(0, first_tool);
-        // Trim trailing whitespace from content
-        while (!msg.content.empty() && std::isspace(msg.content.back())) {
-            msg.content.pop_back();
-        }
-    } else {
-        msg.content = content;
-        return msg;  // No tool calls
-    }
-
-    // Parse tool calls
-    if (has_wrapper) {
-        // Parse <tool_call>...<function=...>...</function>...</tool_call> format
-        while ((tool_call_start = remaining.find("<tool_call>")) != std::string::npos) {
-            size_t tool_call_end = remaining.find("</tool_call>", tool_call_start);
-            if (tool_call_end == std::string::npos) break;
-
-            std::string tool_block = remaining.substr(tool_call_start + 11, tool_call_end - tool_call_start - 11);
-            remaining = remaining.substr(tool_call_end + 12);
-
-            common_chat_tool_call tc;
-            tc.id = "call_" + std::to_string(msg.tool_calls.size());
-            if (parse_function_block(tool_block, tc)) {
-                msg.tool_calls.push_back(tc);
-            }
-        }
-    } else {
-        // Parse bare <function=...>...</function> format
-        while ((func_start = remaining.find("<function=")) != std::string::npos) {
-            size_t func_end = remaining.find("</function>", func_start);
-            if (func_end == std::string::npos) break;
-
-            std::string func_block = remaining.substr(func_start, func_end - func_start + 11);
-            remaining = remaining.substr(func_end + 11);
-
-            common_chat_tool_call tc;
-            tc.id = "call_" + std::to_string(msg.tool_calls.size());
-            if (parse_function_block(func_block, tc)) {
-                msg.tool_calls.push_back(tc);
-            }
-        }
-    }
-
-    return msg;
-}
-
 common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
     server_response_reader rd = server_ctx_.get_response_reader();
     {
@@ -433,6 +267,7 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
 
     console::spinner::stop();
     std::string full_content;
+    common_chat_syntax detected_syntax;
     bool is_thinking = false;
     bool was_aborted = false;
 
@@ -479,10 +314,12 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
         if (res_final) {
             out_timings = std::move(res_final->timings);
-            // Use the raw content for our own parsing
+            // Use the raw content for parsing
             if (!res_final->content.empty()) {
                 full_content = res_final->content;
             }
+            // Get the detected chat syntax from the server (includes format auto-detection)
+            detected_syntax = res_final->generation_params.oaicompat_chat_syntax;
             break;
         }
 
@@ -501,8 +338,8 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         return msg;
     }
 
-    // Parse tool calls ourselves using the qwen3-coder/nemotron XML format
-    return parse_tool_calls_xml(full_content);
+    // Use llama.cpp's standard chat parser with server-detected format
+    return common_chat_parse(full_content, /* is_partial= */ false, detected_syntax);
 }
 
 tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
