@@ -1,5 +1,6 @@
 #include "agent-loop.h"
 #include "console.h"
+#include "chat-parser.h"
 
 #include <chrono>
 #include <functional>
@@ -268,7 +269,6 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
     console::spinner::stop();
     std::string full_content;
     common_chat_syntax detected_syntax;
-    bool is_thinking = false;
     bool was_aborted = false;
 
     while (result) {
@@ -286,28 +286,13 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         }
 
         auto res_partial = dynamic_cast<server_task_result_cmpl_partial *>(result.get());
-        if (res_partial) {
+        if (res_partial && !res_partial->is_progress) {
             out_timings = std::move(res_partial->timings);
-            for (const auto & diff : res_partial->oaicompat_msg_diffs) {
-                if (!diff.content_delta.empty()) {
-                    if (is_thinking) {
-                        console::log("\n───\n\n");
-                        console::set_display(DISPLAY_TYPE_RESET);
-                        is_thinking = false;
-                    }
-                    full_content += diff.content_delta;
-                    console::log("%s", diff.content_delta.c_str());
-                    console::flush();
-                }
-                if (!diff.reasoning_content_delta.empty()) {
-                    console::set_display(DISPLAY_TYPE_REASONING);
-                    if (!is_thinking) {
-                        console::log("───\n");
-                    }
-                    is_thinking = true;
-                    console::log("%s", diff.reasoning_content_delta.c_str());
-                    console::flush();
-                }
+            // Use raw content directly (oaicompat_msg_diffs requires update() which needs states)
+            if (!res_partial->content.empty()) {
+                full_content += res_partial->content;
+                console::log("%s", res_partial->content.c_str());
+                console::flush();
             }
         }
 
@@ -338,7 +323,35 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         return msg;
     }
 
-    // Use llama.cpp's standard chat parser with server-detected format
+    // PEG formats are designed for grammar-constrained generation.
+    // For unconstrained generation (agent mode), use a custom parser with bare XML format
+    // that handles <function=name><parameter=key>value</parameter></function> without wrapper tags.
+    if (detected_syntax.format == COMMON_CHAT_FORMAT_PEG_CONSTRUCTED ||
+        detected_syntax.format == COMMON_CHAT_FORMAT_PEG_NATIVE ||
+        detected_syntax.format == COMMON_CHAT_FORMAT_PEG_SIMPLE) {
+        // Custom XML format for bare function calls (no <tool_call> wrapper)
+        static const xml_tool_call_format bare_xml_form = []() {
+            xml_tool_call_format form {};
+            form.scope_start     = "";              // No wrapper
+            form.tool_start      = "<function=";
+            form.tool_sep        = ">";
+            form.key_start       = "<parameter=";
+            form.key_val_sep     = ">";
+            form.val_end         = "</parameter>";
+            form.tool_end        = "</function>";
+            form.scope_end       = "";              // No wrapper
+            form.trim_raw_argval = true;
+            return form;
+        }();
+
+        // Create parser and use custom format directly
+        common_chat_msg_parser builder(full_content, /* is_partial= */ false, detected_syntax);
+        builder.consume_reasoning_with_xml_tool_calls(bare_xml_form, "<think>", "</think>");
+        builder.finish();
+        return builder.result();
+    }
+
+    // For other formats, use llama.cpp's standard chat parser
     return common_chat_parse(full_content, /* is_partial= */ false, detected_syntax);
 }
 
