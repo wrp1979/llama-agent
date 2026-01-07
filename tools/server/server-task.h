@@ -293,6 +293,9 @@ struct server_task_result_cmpl_final : server_task_result {
     std::string        oaicompat_cmpl_id;
     common_chat_msg    oaicompat_msg; // to be populated by update()
 
+    // Chat syntax for tool call parsing (synced from task params)
+    common_chat_syntax oaicompat_chat_syntax;
+
     std::vector<common_chat_msg_diff> oaicompat_msg_diffs; // to be populated by update()
     bool is_updated = false;
 
@@ -304,6 +307,8 @@ struct server_task_result_cmpl_final : server_task_result {
 
     virtual void update(task_result_state & state) override {
         is_updated = true;
+        // Sync chat syntax from server (may have been updated by tokenize_cli_input)
+        state.oaicompat_chat_syntax = oaicompat_chat_syntax;
         oaicompat_msg = state.update_chat_msg(content, false, oaicompat_msg_diffs);
     }
 
@@ -341,6 +346,9 @@ struct server_task_result_cmpl_partial : server_task_result {
     std::vector<common_chat_msg_diff> oaicompat_msg_diffs; // to be populated by update()
     bool is_updated = false;
 
+    // Chat syntax for tool call parsing (synced from task params)
+    common_chat_syntax oaicompat_chat_syntax;
+
     // for Anthropic API: track if any reasoning content has been generated
     bool anthropic_has_reasoning = false;
     // Streaming state copied from task_result_state for this chunk
@@ -355,6 +363,8 @@ struct server_task_result_cmpl_partial : server_task_result {
 
     virtual void update(task_result_state & state) override {
         is_updated = true;
+        // Sync chat syntax from server (may have been updated by tokenize_cli_input)
+        state.oaicompat_chat_syntax = oaicompat_chat_syntax;
         state.update_chat_msg(content, true, oaicompat_msg_diffs);
         // track if the accumulated message has any reasoning content
         anthropic_has_reasoning = !state.chat_msg.reasoning_content.empty();
