@@ -1428,6 +1428,7 @@ private:
         res->res_type          = slot.task->params.res_type;
         res->oaicompat_model   = slot.task->params.oaicompat_model;
         res->oaicompat_cmpl_id = slot.task->params.oaicompat_cmpl_id;
+        res->oaicompat_chat_syntax = slot.task->params.oaicompat_chat_syntax;
 
         // populate res.probs_output
         if (slot.task->params.sampling.n_probs > 0) {
@@ -1470,12 +1471,13 @@ private:
         res->stop                = slot.stop;
         res->post_sampling_probs = slot.task->params.post_sampling_probs;
 
-        res->verbose           = slot.task->params.verbose;
-        res->stream            = slot.task->params.stream;
-        res->include_usage     = slot.task->params.include_usage;
-        res->res_type          = slot.task->params.res_type;
-        res->oaicompat_model   = slot.task->params.oaicompat_model;
-        res->oaicompat_cmpl_id = slot.task->params.oaicompat_cmpl_id;
+        res->verbose               = slot.task->params.verbose;
+        res->stream                = slot.task->params.stream;
+        res->include_usage         = slot.task->params.include_usage;
+        res->res_type              = slot.task->params.res_type;
+        res->oaicompat_model       = slot.task->params.oaicompat_model;
+        res->oaicompat_cmpl_id     = slot.task->params.oaicompat_cmpl_id;
+        res->oaicompat_chat_syntax = slot.task->params.oaicompat_chat_syntax;
 
         // populate res.probs_output
         if (slot.task->params.sampling.n_probs > 0) {
