@@ -740,3 +740,205 @@ agent_loop_result agent_loop::run(const std::string & user_prompt) {
     result.final_response = "Reached maximum iterations (" + std::to_string(config_.max_iterations) + ")";
     return result;
 }
+
+// Streaming version of run() for API use
+agent_loop_result agent_loop::run_streaming(
+    const std::string & user_prompt,
+    agent_event_callback on_event,
+    std::function<bool()> should_stop) {
+
+    agent_loop_result result;
+    result.iterations = 0;
+
+    // Default should_stop to check is_interrupted_
+    if (!should_stop) {
+        should_stop = [this]() { return is_interrupted_.load(); };
+    }
+
+    // Add user message
+    messages_.push_back({
+        {"role", "user"},
+        {"content", user_prompt}
+    });
+
+    while (result.iterations < config_.max_iterations) {
+        if (should_stop()) {
+            result.stop_reason = agent_stop_reason::USER_CANCELLED;
+            on_event(agent_event::completed(result.stop_reason, stats_));
+            return result;
+        }
+
+        result.iterations++;
+
+        // Emit iteration start event
+        on_event(agent_event::iteration_start(result.iterations, config_.max_iterations));
+
+        // Generate completion with streaming
+        result_timings timings;
+        common_chat_msg parsed = generate_completion_streaming(timings, on_event, should_stop);
+
+        // Accumulate session statistics
+        if (timings.prompt_n > 0) {
+            stats_.total_input += timings.prompt_n;
+            stats_.total_prompt_ms += timings.prompt_ms;
+        }
+        if (timings.predicted_n > 0) {
+            stats_.total_output += timings.predicted_n;
+            stats_.total_predicted_ms += timings.predicted_ms;
+        }
+        if (timings.cache_n > 0) {
+            stats_.total_cached += timings.cache_n;
+        }
+
+        if (parsed.content.empty() && parsed.tool_calls.empty() && should_stop()) {
+            result.stop_reason = agent_stop_reason::USER_CANCELLED;
+            on_event(agent_event::completed(result.stop_reason, stats_));
+            return result;
+        }
+
+        // Add assistant message to history
+        json assistant_msg;
+        assistant_msg["role"] = "assistant";
+        assistant_msg["content"] = parsed.content;
+
+        if (!parsed.tool_calls.empty()) {
+            assistant_msg["tool_calls"] = json::array();
+            for (const auto & call : parsed.tool_calls) {
+                json tc;
+                tc["id"] = call.id.empty() ? ("call_" + std::to_string(result.iterations)) : call.id;
+                tc["type"] = "function";
+                tc["function"] = {
+                    {"name", call.name},
+                    {"arguments", call.arguments}
+                };
+                assistant_msg["tool_calls"].push_back(tc);
+            }
+        }
+
+        messages_.push_back(assistant_msg);
+
+        // If no tool calls, we're done
+        if (parsed.tool_calls.empty()) {
+            result.stop_reason = agent_stop_reason::COMPLETED;
+            result.final_response = parsed.content;
+            on_event(agent_event::completed(result.stop_reason, stats_));
+            return result;
+        }
+
+        // Execute each tool call
+        for (const auto & call : parsed.tool_calls) {
+            if (should_stop()) {
+                result.stop_reason = agent_stop_reason::USER_CANCELLED;
+                on_event(agent_event::completed(result.stop_reason, stats_));
+                return result;
+            }
+
+            // Emit tool start event
+            on_event(agent_event::tool_start(call.name, call.arguments));
+
+            auto start_time = std::chrono::steady_clock::now();
+            tool_result tool_res = execute_tool_call(call);
+            auto end_time = std::chrono::steady_clock::now();
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+            // Emit tool result event
+            on_event(agent_event::tool_result(call.name, tool_res.success, tool_res.output, elapsed_ms));
+
+            std::string call_id = call.id.empty() ? ("call_" + std::to_string(result.iterations)) : call.id;
+            add_tool_result_message(call.name, call_id, tool_res);
+        }
+    }
+
+    result.stop_reason = agent_stop_reason::MAX_ITERATIONS;
+    result.final_response = "Reached maximum iterations (" + std::to_string(config_.max_iterations) + ")";
+    on_event(agent_event::completed(result.stop_reason, stats_));
+    return result;
+}
+
+// Streaming version of generate_completion
+common_chat_msg agent_loop::generate_completion_streaming(
+    result_timings & out_timings,
+    agent_event_callback on_event,
+    std::function<bool()> should_stop) {
+
+    server_response_reader rd = server_ctx_.get_response_reader();
+    {
+        std::lock_guard<std::mutex> lock(g_completion_mutex);
+
+        server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
+        task.id        = rd.get_new_id();
+        task.index     = 0;
+        task.params    = task_defaults_;
+
+        auto chat_tools = allowed_tools_.empty()
+            ? tool_registry::instance().to_chat_tools()
+            : tool_registry::instance().to_chat_tools_filtered(allowed_tools_);
+        json tools_json = common_chat_tools_to_json_oaicompat<json>(chat_tools);
+
+        task.cli_input = json::object();
+        task.cli_input["messages"] = json::parse(messages_.dump());
+        task.cli_input["tools"] = json::parse(tools_json.dump());
+        task.cli_input["tool_choice"] = "auto";
+
+        rd.post_task(std::move(task));
+    }
+
+    server_task_result_ptr result = rd.next(should_stop);
+
+    std::string full_content;
+    bool was_aborted = false;
+
+    while (result) {
+        if (should_stop()) {
+            was_aborted = true;
+            break;
+        }
+        if (result->is_error()) {
+            json err_data = result->to_json();
+            std::string err_msg = err_data.value("message", "Unknown error");
+            on_event(agent_event::error(err_msg));
+            common_chat_msg empty_msg;
+            return empty_msg;
+        }
+
+        auto res_partial = dynamic_cast<server_task_result_cmpl_partial *>(result.get());
+        if (res_partial) {
+            out_timings = std::move(res_partial->timings);
+            for (const auto & diff : res_partial->oaicompat_msg_diffs) {
+                if (!diff.content_delta.empty()) {
+                    on_event(agent_event::text_delta(diff.content_delta));
+                    full_content += diff.content_delta;
+                }
+                if (!diff.reasoning_content_delta.empty()) {
+                    on_event(agent_event::reasoning_delta(diff.reasoning_content_delta));
+                }
+            }
+        }
+
+        auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
+        if (res_final) {
+            out_timings = std::move(res_final->timings);
+            if (!res_final->oaicompat_msg.empty()) {
+                return res_final->oaicompat_msg;
+            }
+            if (!res_final->content.empty()) {
+                full_content = res_final->content;
+            }
+            break;
+        }
+
+        result = rd.next(should_stop);
+    }
+
+    if (was_aborted) {
+        common_chat_msg msg;
+        msg.role = "assistant";
+        msg.content = full_content;
+        return msg;
+    }
+
+    common_chat_msg msg;
+    msg.role = "assistant";
+    msg.content = full_content;
+    return msg;
+}

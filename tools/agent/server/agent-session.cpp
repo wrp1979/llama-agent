@@ -1,0 +1,215 @@
+#include "agent-session.h"
+
+#include <iomanip>
+#include <sstream>
+
+// agent_session implementation
+
+agent_session::agent_session(const std::string & id,
+                             server_context & server_ctx,
+                             const common_params & params,
+                             const agent_session_config & config)
+    : id_(id)
+    , server_ctx_(server_ctx)
+    , params_(params)
+    , config_(config)
+    , created_at_(std::chrono::steady_clock::now())
+    , last_activity_(created_at_) {
+
+    // Set up permission manager
+    if (!config_.working_dir.empty()) {
+        permissions_.set_project_root(config_.working_dir);
+    }
+    permissions_.set_yolo_mode(config_.yolo_mode);
+}
+
+agent_session::~agent_session() {
+    cancel();
+    if (worker_thread_.joinable()) {
+        worker_thread_.join();
+    }
+}
+
+agent_session_info agent_session::info() const {
+    agent_session_info info;
+    info.id = id_;
+    info.state = state_.load();
+    info.created_at = created_at_;
+    info.last_activity = last_activity_;
+    info.message_count = loop_ ? static_cast<int>(loop_->get_messages().size()) : 0;
+    info.stats = loop_ ? loop_->get_stats() : session_stats{};
+    return info;
+}
+
+void agent_session::send_message(const std::string & content,
+                                  agent_event_callback on_event) {
+    // Wait for any previous operation to complete
+    if (worker_thread_.joinable()) {
+        worker_thread_.join();
+    }
+
+    last_activity_ = std::chrono::steady_clock::now();
+    is_running_.store(true);
+    is_interrupted_.store(false);
+    state_.store(agent_session_state::RUNNING);
+
+    // Create agent_loop if it doesn't exist
+    if (!loop_) {
+        agent_config agent_cfg;
+        agent_cfg.max_iterations = config_.max_iterations;
+        agent_cfg.tool_timeout_ms = config_.tool_timeout_ms;
+        agent_cfg.working_dir = config_.working_dir;
+        agent_cfg.yolo_mode = config_.yolo_mode;
+
+        loop_ = std::make_unique<agent_loop>(
+            server_ctx_,
+            params_,
+            agent_cfg,
+            is_interrupted_
+        );
+    }
+
+    // Run in background thread
+    worker_thread_ = std::thread([this, content, on_event]() {
+        auto should_stop = [this]() {
+            return is_interrupted_.load();
+        };
+
+        agent_loop_result result = loop_->run_streaming(content, on_event, should_stop);
+
+        {
+            std::lock_guard<std::mutex> lock(result_mutex_);
+            last_result_ = result;
+        }
+
+        state_.store(agent_session_state::IDLE);
+        is_running_.store(false);
+        last_activity_ = std::chrono::steady_clock::now();
+    });
+}
+
+std::optional<agent_loop_result> agent_session::get_result() {
+    std::lock_guard<std::mutex> lock(result_mutex_);
+    return last_result_;
+}
+
+void agent_session::cancel() {
+    is_interrupted_.store(true);
+}
+
+std::vector<permission_request_async> agent_session::pending_permissions() {
+    return permissions_.pending();
+}
+
+bool agent_session::respond_permission(const std::string & request_id, bool allowed, permission_scope scope) {
+    bool result = permissions_.respond(request_id, allowed, scope);
+    if (result && state_.load() == agent_session_state::WAITING_PERMISSION) {
+        state_.store(agent_session_state::RUNNING);
+    }
+    return result;
+}
+
+json agent_session::get_messages() const {
+    if (loop_) {
+        return loop_->get_messages();
+    }
+    return json::array();
+}
+
+session_stats agent_session::get_stats() const {
+    if (loop_) {
+        return loop_->get_stats();
+    }
+    return session_stats{};
+}
+
+void agent_session::clear() {
+    if (loop_) {
+        loop_->clear();
+    }
+    permissions_.clear_session();
+    {
+        std::lock_guard<std::mutex> lock(result_mutex_);
+        last_result_.reset();
+    }
+}
+
+// agent_session_manager implementation
+
+agent_session_manager::agent_session_manager(server_context & server_ctx, const common_params & params)
+    : server_ctx_(server_ctx)
+    , params_(params) {
+}
+
+agent_session_manager::~agent_session_manager() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_.clear();
+}
+
+std::string agent_session_manager::generate_session_id() {
+    uint64_t counter = session_counter_.fetch_add(1);
+    std::stringstream ss;
+    ss << "sess_" << std::hex << std::setfill('0') << std::setw(8) << counter;
+    return ss.str();
+}
+
+std::string agent_session_manager::create_session(const agent_session_config & config) {
+    std::string id = generate_session_id();
+
+    auto session = std::make_unique<agent_session>(id, server_ctx_, params_, config);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_[id] = std::move(session);
+
+    return id;
+}
+
+agent_session * agent_session_manager::get_session(const std::string & id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(id);
+    if (it != sessions_.end()) {
+        return it->second.get();
+    }
+    return nullptr;
+}
+
+bool agent_session_manager::delete_session(const std::string & id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(id);
+    if (it != sessions_.end()) {
+        sessions_.erase(it);
+        return true;
+    }
+    return false;
+}
+
+std::vector<agent_session_info> agent_session_manager::list_sessions() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<agent_session_info> result;
+    result.reserve(sessions_.size());
+    for (const auto & [id, session] : sessions_) {
+        result.push_back(session->info());
+    }
+    return result;
+}
+
+size_t agent_session_manager::session_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return sessions_.size();
+}
+
+void agent_session_manager::cleanup(int idle_timeout_seconds) {
+    auto now = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(idle_timeout_seconds);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = sessions_.begin(); it != sessions_.end(); ) {
+        auto info = it->second->info();
+        auto idle_duration = now - info.last_activity;
+        if (idle_duration > timeout && info.state == agent_session_state::IDLE) {
+            it = sessions_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
