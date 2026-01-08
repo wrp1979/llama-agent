@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <queue>
 
@@ -75,6 +76,22 @@ struct sse_stream_res : server_http_res {
     }
 };
 
+// Wrapper that holds shared_ptr to sse_stream_res to extend its lifetime
+// This ensures the SSE response object lives until both:
+// 1. The HTTP framework is done with it
+// 2. The worker thread callback is done with it
+struct sse_shared_wrapper : server_http_res {
+    std::shared_ptr<sse_stream_res> sse;
+
+    explicit sse_shared_wrapper(std::shared_ptr<sse_stream_res> s) : sse(std::move(s)) {
+        content_type = sse->content_type;
+        headers = sse->headers;
+        next = [this](std::string & output) -> bool {
+            return sse->next(output);
+        };
+    }
+};
+
 agent_routes::agent_routes(agent_session_manager & session_mgr)
     : session_mgr_(session_mgr) {
 
@@ -105,6 +122,19 @@ agent_routes::agent_routes(agent_session_manager & session_mgr)
                 }
                 if (body.contains("working_dir")) {
                     config.working_dir = body["working_dir"].get<std::string>();
+                }
+                // Skills configuration
+                if (body.contains("enable_skills")) {
+                    config.enable_skills = body["enable_skills"].get<bool>();
+                }
+                if (body.contains("skills_paths") && body["skills_paths"].is_array()) {
+                    for (const auto & path : body["skills_paths"]) {
+                        config.extra_skills_paths.push_back(path.get<std::string>());
+                    }
+                }
+                // AGENTS.md configuration
+                if (body.contains("enable_agents_md")) {
+                    config.enable_agents_md = body["enable_agents_md"].get<bool>();
                 }
             } catch (const json::exception & e) {
                 return make_error(400, std::string("Invalid JSON: ") + e.what());
@@ -192,12 +222,14 @@ agent_routes::agent_routes(agent_session_manager & session_mgr)
             return make_error(400, std::string("Invalid JSON: ") + e.what());
         }
 
-        // Create SSE streaming response
-        auto sse_res = std::make_unique<sse_stream_res>();
-        auto * sse_ptr = sse_res.get();
+        // Create SSE streaming response with shared ownership
+        // The shared_ptr ensures the response lives until both:
+        // 1. The HTTP framework is done streaming
+        // 2. The worker thread callback is done
+        auto sse_shared = std::make_shared<sse_stream_res>();
 
-        // Start processing in background
-        session->send_message(content, [sse_ptr](const agent_event & event) {
+        // Start processing in background - capture shared_ptr to extend lifetime
+        session->send_message(content, [sse_shared](const agent_event & event) {
             std::string event_type;
             switch (event.type) {
                 case agent_event_type::TEXT_DELTA:
@@ -223,19 +255,20 @@ agent_routes::agent_routes(agent_session_manager & session_mgr)
                     break;
                 case agent_event_type::COMPLETED:
                     event_type = "completed";
-                    sse_ptr->send(event_type, event.data);
-                    sse_ptr->finish();
+                    sse_shared->send(event_type, event.data);
+                    sse_shared->finish();
                     return;
                 case agent_event_type::ERROR:
                     event_type = "error";
-                    sse_ptr->send(event_type, event.data);
-                    sse_ptr->finish();
+                    sse_shared->send(event_type, event.data);
+                    sse_shared->finish();
                     return;
             }
-            sse_ptr->send(event_type, event.data);
+            sse_shared->send(event_type, event.data);
         });
 
-        return sse_res;
+        // Return wrapper that holds shared_ptr reference
+        return std::make_unique<sse_shared_wrapper>(sse_shared);
     };
 
     // GET /v1/agent/session/:id/messages - Get conversation history

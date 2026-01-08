@@ -1,7 +1,27 @@
 #include "agent-session.h"
+#include "../skills/skills-manager.h"
+#include "../agents-md/agents-md-manager.h"
 
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
+
+// Get the user config directory for llama-agent
+static std::string get_config_dir() {
+#ifdef _WIN32
+    const char * appdata = std::getenv("APPDATA");
+    if (appdata) {
+        return std::string(appdata) + "\\llama-agent";
+    }
+    return "";
+#else
+    const char * home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.llama-agent";
+    }
+    return "";
+#endif
+}
 
 // agent_session implementation
 
@@ -21,6 +41,40 @@ agent_session::agent_session(const std::string & id,
         permissions_.set_project_root(config_.working_dir);
     }
     permissions_.set_yolo_mode(config_.yolo_mode);
+
+    std::string config_dir = get_config_dir();
+
+    // Discover Skills (agentskills.io spec)
+    if (config_.enable_skills) {
+        skills_manager skills_mgr;
+        std::vector<std::string> skill_paths;
+
+        // Project-local skills (highest priority)
+        // Default to "." if working_dir not set, matching CLI behavior
+        std::string skills_working_dir = config_.working_dir.empty() ? "." : config_.working_dir;
+        skill_paths.push_back(skills_working_dir + "/.llama-agent/skills");
+
+        // User-global skills
+        if (!config_dir.empty()) {
+            skill_paths.push_back(config_dir + "/skills");
+        }
+
+        // Extra paths from config
+        for (const auto & path : config_.extra_skills_paths) {
+            skill_paths.push_back(path);
+        }
+
+        skills_mgr.discover(skill_paths);
+        skills_prompt_section_ = skills_mgr.generate_prompt_section();
+    }
+
+    // Discover AGENTS.md files (agents.md spec)
+    if (config_.enable_agents_md) {
+        agents_md_manager agents_md_mgr;
+        std::string working_dir = config_.working_dir.empty() ? "." : config_.working_dir;
+        agents_md_mgr.discover(working_dir, config_dir);
+        agents_md_prompt_section_ = agents_md_mgr.generate_prompt_section();
+    }
 }
 
 agent_session::~agent_session() {
@@ -60,6 +114,15 @@ void agent_session::send_message(const std::string & content,
         agent_cfg.tool_timeout_ms = config_.tool_timeout_ms;
         agent_cfg.working_dir = config_.working_dir;
         agent_cfg.yolo_mode = config_.yolo_mode;
+
+        // Skills configuration
+        agent_cfg.enable_skills = config_.enable_skills;
+        agent_cfg.skills_search_paths = config_.extra_skills_paths;
+        agent_cfg.skills_prompt_section = skills_prompt_section_;
+
+        // AGENTS.md configuration
+        agent_cfg.enable_agents_md = config_.enable_agents_md;
+        agent_cfg.agents_md_prompt_section = agents_md_prompt_section_;
 
         loop_ = std::make_unique<agent_loop>(
             server_ctx_,
