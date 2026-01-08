@@ -9,6 +9,12 @@
 #include "llama.h"
 #include "log.h"
 
+// MCP support (Unix only)
+#ifndef _WIN32
+#include "../mcp/mcp-server-manager.h"
+#include "../mcp/mcp-tool-wrapper.h"
+#endif
+
 #include <atomic>
 #include <csignal>
 #include <functional>
@@ -147,6 +153,28 @@ int main(int argc, char ** argv) {
     ctx_http.is_ready.store(true);
     LOG_INF("Model loaded successfully\n");
 
+    // Initialize MCP servers (Unix only)
+    // MCP manager must be declared here to outlive session manager (tools hold pointer to it)
+#ifndef _WIN32
+    mcp_server_manager mcp_mgr;
+    int mcp_tools_count = 0;
+    std::string working_dir = ".";  // Default working directory for MCP config search
+    std::string mcp_config = find_mcp_config(working_dir);
+    if (!mcp_config.empty()) {
+        LOG_INF("Loading MCP config from: %s\n", mcp_config.c_str());
+        if (mcp_mgr.load_config(mcp_config)) {
+            int started = mcp_mgr.start_servers();
+            if (started > 0) {
+                register_mcp_tools(mcp_mgr);
+                mcp_tools_count = static_cast<int>(mcp_mgr.list_all_tools().size());
+                LOG_INF("MCP: %d servers started, %d tools registered\n", started, mcp_tools_count);
+            }
+        }
+    }
+#else
+    int mcp_tools_count = 0;
+#endif
+
     // Setup signal handlers
     shutdown_handler = [&ctx_server](int) {
         ctx_server.terminate();
@@ -171,6 +199,9 @@ int main(int argc, char ** argv) {
     LOG_INF("llama-agent-server is listening on %s\n", ctx_http.listening_address.c_str());
     LOG_INF("============================================\n");
     LOG_INF("\n");
+    if (mcp_tools_count > 0) {
+        LOG_INF("MCP tools: %d\n", mcp_tools_count);
+    }
     LOG_INF("API Endpoints:\n");
     LOG_INF("  POST /v1/agent/session           - Create a new session\n");
     LOG_INF("  GET  /v1/agent/session/:id       - Get session info\n");

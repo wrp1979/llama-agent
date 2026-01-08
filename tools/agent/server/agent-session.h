@@ -26,6 +26,13 @@ struct agent_session_config {
     int tool_timeout_ms = 120000;
     std::string working_dir;
     std::string system_prompt;            // Optional custom system prompt
+
+    // Skills configuration (agentskills.io spec)
+    bool enable_skills = true;
+    std::vector<std::string> extra_skills_paths;
+
+    // AGENTS.md configuration (agents.md spec)
+    bool enable_agents_md = true;
 };
 
 // State of an agent session
@@ -118,6 +125,10 @@ private:
     // Timestamps
     std::chrono::steady_clock::time_point created_at_;
     std::chrono::steady_clock::time_point last_activity_;
+
+    // Discovered Skills and AGENTS.md content (cached at session creation)
+    std::string skills_prompt_section_;
+    std::string agents_md_prompt_section_;
 };
 
 // Manages multiple agent sessions

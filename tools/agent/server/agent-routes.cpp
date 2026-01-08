@@ -106,6 +106,19 @@ agent_routes::agent_routes(agent_session_manager & session_mgr)
                 if (body.contains("working_dir")) {
                     config.working_dir = body["working_dir"].get<std::string>();
                 }
+                // Skills configuration
+                if (body.contains("enable_skills")) {
+                    config.enable_skills = body["enable_skills"].get<bool>();
+                }
+                if (body.contains("skills_paths") && body["skills_paths"].is_array()) {
+                    for (const auto & path : body["skills_paths"]) {
+                        config.extra_skills_paths.push_back(path.get<std::string>());
+                    }
+                }
+                // AGENTS.md configuration
+                if (body.contains("enable_agents_md")) {
+                    config.enable_agents_md = body["enable_agents_md"].get<bool>();
+                }
             } catch (const json::exception & e) {
                 return make_error(400, std::string("Invalid JSON: ") + e.what());
             }
