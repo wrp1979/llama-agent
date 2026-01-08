@@ -11,11 +11,12 @@ A coding agent that runs entirely inside [llama.cpp](https://github.com/ggml-org
 - **Single binary**: no Python, no Node.js, just download and run
 - **Native speed**: tool calls in-process, no HTTP overhead
 - **100% local**: offline, no API costs, your code stays on your machine
+- **API server**: `llama-agent-server` exposes the agent via HTTP API with SSE streaming
 
 ## Quick Start
 
 ```bash
-# Build
+# Build CLI agent
 cmake -B build
 cmake --build build --target llama-agent
 
@@ -24,6 +25,17 @@ cmake --build build --target llama-agent
 
 # Or with a local model
 ./build/bin/llama-agent -m model.gguf
+```
+
+For the HTTP API server:
+
+```bash
+# Build with HTTP support
+cmake -B build -DLLAMA_HTTPLIB=ON
+cmake --build build --target llama-agent-server
+
+# Run API server
+./build/bin/llama-agent-server -hf unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Q5_K_M --port 8081
 ```
 
 ## Installation
@@ -401,6 +413,128 @@ Skip all permission prompts:
 
 > [!CAUTION]
 > **YOLO mode is extremely dangerous.** The agent will execute any command without confirmation, including destructive operations like `rm -rf`. This is especially risky with smaller models that have weaker instruction-following and may hallucinate unsafe commands. Only use this flag if you fully trust the model and understand the risks.
+
+## HTTP API Server
+
+`llama-agent-server` exposes the agent via HTTP API with Server-Sent Events (SSE) streaming, enabling integration with web UIs, IDEs, and custom clients.
+
+### Quick Start
+
+```bash
+# Build
+cmake -B build -DLLAMA_HTTPLIB=ON
+cmake --build build --target llama-agent-server
+
+# Run
+./build/bin/llama-agent-server -hf unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Q5_K_M --port 8081
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/v1/agent/session` | POST | Create a new session |
+| `/v1/agent/session/:id` | GET | Get session info |
+| `/v1/agent/session/:id/chat` | POST | Send message (SSE streaming) |
+| `/v1/agent/session/:id/messages` | GET | Get conversation history |
+| `/v1/agent/session/:id/permissions` | GET | Get pending permission requests |
+| `/v1/agent/permission/:id` | POST | Respond to permission request |
+| `/v1/agent/sessions` | GET | List all sessions |
+| `/v1/agent/tools` | GET | List available tools |
+| `/v1/agent/session/:id/stats` | GET | Get session token stats |
+
+### Create Session
+
+```bash
+curl -X POST http://localhost:8081/v1/agent/session \
+  -H "Content-Type: application/json" \
+  -d '{"yolo": true, "max_iterations": 50}'
+```
+
+Response:
+```json
+{"session_id": "sess_00000001"}
+```
+
+Session options:
+- `yolo` (boolean): Skip permission prompts
+- `max_iterations` (int): Max agent iterations (default: 50)
+- `working_dir` (string): Working directory for tools
+
+### Send Message (Streaming)
+
+```bash
+curl -N http://localhost:8081/v1/agent/session/sess_00000001/chat \
+  -H "Content-Type: application/json" \
+  -d '{"content": "List files in the current directory"}'
+```
+
+Response is Server-Sent Events stream:
+
+```
+event: iteration_start
+data: {"iteration":1,"max_iterations":50}
+
+event: reasoning_delta
+data: {"content":"Let me list the files..."}
+
+event: tool_start
+data: {"name":"bash","args":"{\"command\":\"ls\"}"}
+
+event: tool_result
+data: {"name":"bash","success":true,"output":"file1.txt\nfile2.cpp","duration_ms":45}
+
+event: text_delta
+data: {"content":"Here are the files:"}
+
+event: completed
+data: {"reason":"completed","stats":{"input_tokens":1500,"output_tokens":200,"cached_tokens":0}}
+```
+
+### SSE Event Types
+
+| Event | Description |
+|-------|-------------|
+| `iteration_start` | New agent iteration starting |
+| `reasoning_delta` | Streaming model reasoning/thinking |
+| `text_delta` | Streaming response text |
+| `tool_start` | Tool execution beginning |
+| `tool_result` | Tool execution completed |
+| `permission_required` | Permission needed (non-yolo mode) |
+| `permission_resolved` | Permission granted/denied |
+| `completed` | Agent finished with stats |
+| `error` | Error occurred |
+
+### Permission Flow
+
+When `yolo: false`, dangerous operations require permission:
+
+```
+event: permission_required
+data: {"request_id":"perm_abc123","tool":"bash","details":"rm -rf temp/","dangerous":true}
+```
+
+Respond via API:
+```bash
+curl -X POST http://localhost:8081/v1/agent/permission/perm_abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"allow": true, "scope": "session"}'
+```
+
+Scopes: `once`, `session`, `always`
+
+### Concurrent Sessions
+
+The server supports multiple concurrent sessions, each with its own conversation history and permission state. Sessions are identified by unique IDs (`sess_XXXXXXXX`).
+
+```bash
+# List all sessions
+curl http://localhost:8081/v1/agent/sessions
+
+# Delete a session
+curl -X POST http://localhost:8081/v1/agent/session/sess_00000001/delete
+```
 
 ## License
 
