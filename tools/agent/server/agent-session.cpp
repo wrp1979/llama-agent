@@ -50,9 +50,9 @@ agent_session::agent_session(const std::string & id,
         std::vector<std::string> skill_paths;
 
         // Project-local skills (highest priority)
-        if (!config_.working_dir.empty()) {
-            skill_paths.push_back(config_.working_dir + "/.llama-agent/skills");
-        }
+        // Default to "." if working_dir not set, matching CLI behavior
+        std::string skills_working_dir = config_.working_dir.empty() ? "." : config_.working_dir;
+        skill_paths.push_back(skills_working_dir + "/.llama-agent/skills");
 
         // User-global skills
         if (!config_dir.empty()) {
