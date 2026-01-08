@@ -24,6 +24,10 @@ struct tool_context {
     void * common_params_ptr = nullptr;    // Pointer to common_params (for model inference params)
     void * session_stats_ptr = nullptr;    // Pointer to session_stats (for tracking subagent tokens)
     int subagent_depth = 0;                // Current nesting depth (0 = main agent)
+
+    // Prefix caching: base system prompt shared between parent and subagents
+    // Subagent prompts start with this prefix to maximize KV cache reuse
+    std::string base_system_prompt;
 };
 
 // Result returned from tool execution

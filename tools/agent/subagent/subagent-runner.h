@@ -16,6 +16,7 @@
 struct server_context;
 struct agent_config;
 struct common_params;
+class subagent_output_buffer;
 
 // Parameters for running a subagent
 struct subagent_params {
@@ -103,4 +104,8 @@ private:
 
     // Generate unique task ID
     static std::string generate_task_id();
+
+    // Internal run method with optional buffer for background tasks
+    subagent_result run_internal(const subagent_params & params,
+                                  subagent_output_buffer * buffer);
 };

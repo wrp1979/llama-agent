@@ -77,6 +77,27 @@ agent_loop::agent_loop(server_context & server_ctx,
     permission_mgr_.set_project_root(tool_ctx_.working_dir);
     permission_mgr_.set_yolo_mode(config.yolo_mode);
 
+    // Base prompt shared with subagents for KV cache prefix sharing
+    // Subagent prompts start with this exact text to maximize cache hits
+    static const char * BASE_PROMPT_PREFIX = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
+
+You help users with software engineering tasks by reading files, writing code, running commands, and navigating codebases. You run entirely on the user's machine - no data leaves their system.
+
+# Tools
+
+You have access to the following tools:
+
+- **bash**: Execute shell commands. Use for git, build commands, running tests, etc.
+- **read**: Read file contents with line numbers. Always read files before editing them.
+- **write**: Create new files or overwrite existing ones.
+- **edit**: Make targeted edits using search/replace. The old_string must match exactly. Use replace_all=true to replace all occurrences of a word or phrase.
+- **glob**: Find files matching a pattern. Use to explore project structure.
+
+)";
+
+    // Store base prompt for subagents to inherit (enables KV cache prefix sharing)
+    tool_ctx_.base_system_prompt = BASE_PROMPT_PREFIX;
+
     // Add system prompt for tool usage
     std::string system_prompt = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
 
