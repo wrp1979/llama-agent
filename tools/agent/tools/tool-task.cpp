@@ -61,9 +61,9 @@ static void update_parent_stats(const tool_context & ctx, const subagent_result 
 }
 
 static tool_result task_execute(const json & args, const tool_context & ctx) {
-    // Check depth limit
+    // Check depth limit using tool context's actual depth, not display's visual nesting
     auto & display = subagent_display::instance();
-    if (!display.can_spawn()) {
+    if (ctx.subagent_depth >= display.max_depth()) {
         return {false, "",
             "Cannot spawn subagent: maximum nesting depth reached (depth=" +
             std::to_string(ctx.subagent_depth) + ", max=" +

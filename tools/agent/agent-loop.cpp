@@ -3,7 +3,12 @@
 
 #include <chrono>
 #include <functional>
+#include <mutex>
 #include <sstream>
+
+// Global mutex to serialize generate_completion calls across all agent instances
+// This works around a race condition in the server's cli_input handling
+static std::mutex g_completion_mutex;
 
 #if defined(_WIN32)
 #include <conio.h>
@@ -317,6 +322,9 @@ void agent_loop::clear() {
 common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
     server_response_reader rd = server_ctx_.get_response_reader();
     {
+        // Serialize task posting to work around server race condition with concurrent cli_input tasks
+        std::lock_guard<std::mutex> lock(g_completion_mutex);
+
         server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
         task.id        = rd.get_new_id();
         task.index     = 0;
@@ -330,12 +338,13 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         json tools_json = common_chat_tools_to_json_oaicompat<json>(chat_tools);
 
         // Pass both messages and tools as extended cli_input format
-        task.cli_input = {
-            {"messages", messages_},
-            {"tools", tools_json},
-            {"tool_choice", "auto"}
-        };
-        rd.post_task({std::move(task)});
+        // Use deep copy to avoid any shared state issues across concurrent agents
+        task.cli_input = json::object();
+        task.cli_input["messages"] = json::parse(messages_.dump());
+        task.cli_input["tools"] = json::parse(tools_json.dump());
+        task.cli_input["tool_choice"] = "auto";
+
+        rd.post_task(std::move(task));
     }
 
     auto should_stop = [this]() {
@@ -350,11 +359,15 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         return false;
     };
 
-    // Wait for first result
-    console::spinner::start();
+    // Wait for first result (spinner only for main agent)
+    if (!is_subagent_) {
+        console::spinner::start();
+    }
     server_task_result_ptr result = rd.next(should_stop);
 
-    console::spinner::stop();
+    if (!is_subagent_) {
+        console::spinner::stop();
+    }
     std::string full_content;
     bool is_thinking = false;
     bool was_aborted = false;
@@ -366,7 +379,7 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         }
         if (result->is_error()) {
             json err_data = result->to_json();
-            if (err_data.contains("message")) {
+            if (err_data.contains("message") && !is_subagent_) {
                 console::error("Error: %s\n", err_data["message"].get<std::string>().c_str());
             }
             common_chat_msg empty_msg;
@@ -378,23 +391,29 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
             out_timings = std::move(res_partial->timings);
             for (const auto & diff : res_partial->oaicompat_msg_diffs) {
                 if (!diff.content_delta.empty()) {
+                    if (!is_subagent_) {
+                        if (is_thinking) {
+                            console::log("\n───\n\n");
+                            console::set_display(DISPLAY_TYPE_RESET);
+                        }
+                        console::log("%s", diff.content_delta.c_str());
+                        console::flush();
+                    }
                     if (is_thinking) {
-                        console::log("\n───\n\n");
-                        console::set_display(DISPLAY_TYPE_RESET);
                         is_thinking = false;
                     }
                     full_content += diff.content_delta;
-                    console::log("%s", diff.content_delta.c_str());
-                    console::flush();
                 }
                 if (!diff.reasoning_content_delta.empty()) {
-                    console::set_display(DISPLAY_TYPE_REASONING);
-                    if (!is_thinking) {
-                        console::log("───\n");
+                    if (!is_subagent_) {
+                        console::set_display(DISPLAY_TYPE_REASONING);
+                        if (!is_thinking) {
+                            console::log("───\n");
+                        }
+                        console::log("%s", diff.reasoning_content_delta.c_str());
+                        console::flush();
                     }
                     is_thinking = true;
-                    console::log("%s", diff.reasoning_content_delta.c_str());
-                    console::flush();
                 }
             }
         }
@@ -421,7 +440,9 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
     is_interrupted_.store(false);
 
     if (was_aborted) {
-        console::log("\n[Generation aborted]\n");
+        if (!is_subagent_) {
+            console::log("\n[Generation aborted]\n");
+        }
         // Return partial content without tool calls so conversation can continue
         common_chat_msg msg;
         msg.role = "assistant";
@@ -644,7 +665,7 @@ agent_loop_result agent_loop::run(const std::string & user_prompt) {
 
         result.iterations++;
 
-        if (config_.verbose) {
+        if (config_.verbose && !is_subagent_) {
             console::log("\n[Iteration %d/%d]\n", result.iterations, config_.max_iterations);
         }
 
@@ -698,7 +719,9 @@ agent_loop_result agent_loop::run(const std::string & user_prompt) {
             return result;
         }
 
-        console::log("\n");
+        if (!is_subagent_) {
+            console::log("\n");
+        }
 
         // Execute each tool call
         for (const auto & call : parsed.tool_calls) {
