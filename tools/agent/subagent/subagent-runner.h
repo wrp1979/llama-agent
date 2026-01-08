@@ -16,6 +16,7 @@
 struct server_context;
 struct agent_config;
 struct common_params;
+class subagent_output_buffer;
 
 // Parameters for running a subagent
 struct subagent_params {
@@ -31,6 +32,11 @@ struct subagent_result {
     std::string error;
     int iterations = 0;
     std::vector<std::string> tool_calls_summary;  // List of tools called with timing
+
+    // Token statistics from the subagent run
+    int32_t input_tokens = 0;
+    int32_t output_tokens = 0;
+    int32_t cached_tokens = 0;
 };
 
 // Background task state
@@ -98,4 +104,8 @@ private:
 
     // Generate unique task ID
     static std::string generate_task_id();
+
+    // Internal run method with optional buffer for background tasks
+    subagent_result run_internal(const subagent_params & params,
+                                  subagent_output_buffer * buffer);
 };

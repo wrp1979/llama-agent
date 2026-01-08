@@ -40,6 +40,26 @@ static subagent_runner & get_runner(const tool_context & ctx) {
     return *g_runners[key];
 }
 
+// Update parent's session stats with subagent token usage
+static void update_parent_stats(const tool_context & ctx, const subagent_result & result) {
+    if (!ctx.session_stats_ptr) {
+        return;
+    }
+
+    auto * stats = static_cast<session_stats *>(ctx.session_stats_ptr);
+
+    // Add to subagent-specific counters (for breakdown display)
+    stats->subagent_input += result.input_tokens;
+    stats->subagent_output += result.output_tokens;
+    stats->subagent_cached += result.cached_tokens;
+    stats->subagent_count++;
+
+    // Also add to totals so "Main = Total - Subagent" works correctly
+    stats->total_input += result.input_tokens;
+    stats->total_output += result.output_tokens;
+    stats->total_cached += result.cached_tokens;
+}
+
 static tool_result task_execute(const json & args, const tool_context & ctx) {
     // Check depth limit
     auto & display = subagent_display::instance();
@@ -68,6 +88,9 @@ static tool_result task_execute(const json & args, const tool_context & ctx) {
 
         if (runner.is_complete(resume_id)) {
             subagent_result result = runner.get_result(resume_id);
+
+            // Update parent stats with subagent token usage
+            update_parent_stats(ctx, result);
 
             // Format output
             std::ostringstream output;
@@ -142,6 +165,9 @@ static tool_result task_execute(const json & args, const tool_context & ctx) {
     } else {
         // Run synchronously
         subagent_result result = runner.run(task_params);
+
+        // Update parent stats with subagent token usage
+        update_parent_stats(ctx, result);
 
         // Format output
         std::ostringstream output;

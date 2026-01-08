@@ -61,6 +61,12 @@ struct session_stats {
     int32_t total_cached = 0;      // Total tokens served from KV cache
     double total_prompt_ms = 0;    // Total prompt evaluation time
     double total_predicted_ms = 0; // Total generation time
+
+    // Subagent-specific stats (subset of totals above)
+    int32_t subagent_input = 0;    // Prompt tokens from subagents
+    int32_t subagent_output = 0;   // Output tokens from subagents
+    int32_t subagent_cached = 0;   // Cached tokens from subagents
+    int32_t subagent_count = 0;    // Number of subagent runs
 };
 
 // The main agent loop class

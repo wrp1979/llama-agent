@@ -70,11 +70,33 @@ agent_loop::agent_loop(server_context & server_ctx,
     tool_ctx_.server_ctx_ptr = &server_ctx_;
     tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
     tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
     tool_ctx_.subagent_depth = 0;
 
     // Set up permission manager
     permission_mgr_.set_project_root(tool_ctx_.working_dir);
     permission_mgr_.set_yolo_mode(config.yolo_mode);
+
+    // Base prompt shared with subagents for KV cache prefix sharing
+    // Subagent prompts start with this exact text to maximize cache hits
+    static const char * BASE_PROMPT_PREFIX = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
+
+You help users with software engineering tasks by reading files, writing code, running commands, and navigating codebases. You run entirely on the user's machine - no data leaves their system.
+
+# Tools
+
+You have access to the following tools:
+
+- **bash**: Execute shell commands. Use for git, build commands, running tests, etc.
+- **read**: Read file contents with line numbers. Always read files before editing them.
+- **write**: Create new files or overwrite existing ones.
+- **edit**: Make targeted edits using search/replace. The old_string must match exactly. Use replace_all=true to replace all occurrences of a word or phrase.
+- **glob**: Find files matching a pattern. Use to explore project structure.
+
+)";
+
+    // Store base prompt for subagents to inherit (enables KV cache prefix sharing)
+    tool_ctx_.base_system_prompt = BASE_PROMPT_PREFIX;
 
     // Add system prompt for tool usage
     std::string system_prompt = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
@@ -265,6 +287,7 @@ agent_loop::agent_loop(server_context & server_ctx,
     tool_ctx_.server_ctx_ptr = &server_ctx_;
     tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
     tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
     tool_ctx_.subagent_depth = subagent_depth;
 
     // Set up permission manager
@@ -286,6 +309,9 @@ void agent_loop::clear() {
         messages_.push_back(system_msg);
     }
     permission_mgr_.clear_session();
+
+    // Reset stats when conversation is cleared
+    stats_ = session_stats{};
 }
 
 common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {

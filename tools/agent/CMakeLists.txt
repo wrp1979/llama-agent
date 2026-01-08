@@ -10,6 +10,7 @@ set(AGENT_SOURCES
     subagent/subagent-types.cpp
     subagent/subagent-display.cpp
     subagent/subagent-runner.cpp
+    subagent/subagent-output.cpp
     tools/tool-bash.cpp
     tools/tool-read.cpp
     tools/tool-write.cpp

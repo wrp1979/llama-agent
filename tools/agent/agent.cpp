@@ -452,6 +452,27 @@ int main(int argc, char ** argv) {
                     console::log("  Cached tokens:  %d\n", stats.total_cached);
                 }
                 console::log("  Total tokens:   %d\n", stats.total_input + stats.total_output);
+
+                // Show subagent breakdown if any subagents were used
+                if (stats.subagent_count > 0) {
+                    console::log("\n  Subagent breakdown (%d run%s):\n",
+                        stats.subagent_count, stats.subagent_count == 1 ? "" : "s");
+                    console::log("    Prompt tokens:  %d\n", stats.subagent_input);
+                    console::log("    Output tokens:  %d\n", stats.subagent_output);
+                    if (stats.subagent_cached > 0) {
+                        console::log("    Cached tokens:  %d\n", stats.subagent_cached);
+                    }
+                    console::log("    Total tokens:   %d\n", stats.subagent_input + stats.subagent_output);
+
+                    // Show main agent stats (total minus subagent)
+                    int32_t main_input = stats.total_input - stats.subagent_input;
+                    int32_t main_output = stats.total_output - stats.subagent_output;
+                    console::log("\n  Main agent:\n");
+                    console::log("    Prompt tokens:  %d\n", main_input);
+                    console::log("    Output tokens:  %d\n", main_output);
+                    console::log("    Total tokens:   %d\n", main_input + main_output);
+                }
+
                 if (stats.total_prompt_ms > 0) {
                     console::log("  Prompt time:    %.2fs\n", stats.total_prompt_ms / 1000.0);
                 }
