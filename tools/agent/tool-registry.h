@@ -22,6 +22,7 @@ struct tool_context {
     void * server_ctx_ptr = nullptr;       // Pointer to server_context
     void * agent_config_ptr = nullptr;     // Pointer to agent_config
     void * common_params_ptr = nullptr;    // Pointer to common_params (for model inference params)
+    void * session_stats_ptr = nullptr;    // Pointer to session_stats (for tracking subagent tokens)
     int subagent_depth = 0;                // Current nesting depth (0 = main agent)
 };
 

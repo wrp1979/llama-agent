@@ -31,6 +31,11 @@ struct subagent_result {
     std::string error;
     int iterations = 0;
     std::vector<std::string> tool_calls_summary;  // List of tools called with timing
+
+    // Token statistics from the subagent run
+    int32_t input_tokens = 0;
+    int32_t output_tokens = 0;
+    int32_t cached_tokens = 0;
 };
 
 // Background task state

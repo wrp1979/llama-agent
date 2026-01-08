@@ -171,6 +171,12 @@ subagent_result subagent_runner::run(const subagent_params & params) {
     // Convert result
     result.iterations = loop_result.iterations;
 
+    // Collect token stats from the subagent
+    const auto & subagent_stats = subagent.get_stats();
+    result.input_tokens = subagent_stats.total_input;
+    result.output_tokens = subagent_stats.total_output;
+    result.cached_tokens = subagent_stats.total_cached;
+
     switch (loop_result.stop_reason) {
         case agent_stop_reason::COMPLETED:
             result.success = true;

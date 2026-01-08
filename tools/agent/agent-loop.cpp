@@ -70,6 +70,7 @@ agent_loop::agent_loop(server_context & server_ctx,
     tool_ctx_.server_ctx_ptr = &server_ctx_;
     tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
     tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
     tool_ctx_.subagent_depth = 0;
 
     // Set up permission manager
@@ -265,6 +266,7 @@ agent_loop::agent_loop(server_context & server_ctx,
     tool_ctx_.server_ctx_ptr = &server_ctx_;
     tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
     tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
     tool_ctx_.subagent_depth = subagent_depth;
 
     // Set up permission manager
@@ -286,6 +288,9 @@ void agent_loop::clear() {
         messages_.push_back(system_msg);
     }
     permission_mgr_.clear_session();
+
+    // Reset stats when conversation is cleared
+    stats_ = session_stats{};
 }
 
 common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
