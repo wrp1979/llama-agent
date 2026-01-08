@@ -200,6 +200,10 @@ namespace console {
                     break;
                 case DISPLAY_TYPE_ERROR:
                     fprintf(out, ANSI_BOLD ANSI_COLOR_RED);
+                    break;
+                case DISPLAY_TYPE_SUBAGENT:
+                    fprintf(out, ANSI_BOLD ANSI_COLOR_CYAN);
+                    break;
             }
             current_display = display;
             fflush(out);
