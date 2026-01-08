@@ -39,8 +39,8 @@ public:
                               const std::string & args_summary,
                               int elapsed_ms);
 
-        // Report completion with timing
-        void report_done(int elapsed_ms);
+        // Report completion with timing and token usage
+        void report_done(int elapsed_ms, int32_t total_tokens = 0);
 
     private:
         subagent_display & display_;
@@ -79,7 +79,7 @@ private:
     void print_tool_call(int depth, const std::string & tool_name,
                          const std::string & args_summary, int elapsed_ms,
                          subagent_output_buffer * buffer = nullptr);
-    void print_done(int depth, int elapsed_ms,
+    void print_done(int depth, int elapsed_ms, int32_t total_tokens = 0,
                     subagent_output_buffer * buffer = nullptr);
 
     friend class scope;

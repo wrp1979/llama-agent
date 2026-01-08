@@ -192,17 +192,18 @@ subagent_result subagent_runner::run_internal(const subagent_params & params,
     auto end_time = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
-    // Report completion
-    display_scope->report_done(static_cast<int>(elapsed_ms));
-
-    // Convert result
-    result.iterations = loop_result.iterations;
-
     // Collect token stats from the subagent
     const auto & subagent_stats = subagent.get_stats();
     result.input_tokens = subagent_stats.total_input;
     result.output_tokens = subagent_stats.total_output;
     result.cached_tokens = subagent_stats.total_cached;
+    int32_t total_tokens = subagent_stats.total_input + subagent_stats.total_output;
+
+    // Report completion with timing and token usage
+    display_scope->report_done(static_cast<int>(elapsed_ms), total_tokens);
+
+    // Convert result
+    result.iterations = loop_result.iterations;
 
     switch (loop_result.stop_reason) {
         case agent_stop_reason::COMPLETED:

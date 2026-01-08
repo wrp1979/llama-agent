@@ -116,7 +116,18 @@ void subagent_display::print_tool_call(int depth, const std::string & tool_name,
     }
 }
 
-void subagent_display::print_done(int depth, int elapsed_ms,
+// Helper to format token count (e.g., 1234 -> "1.2k", 12345 -> "12.3k")
+static std::string format_tokens(int32_t tokens) {
+    if (tokens < 1000) {
+        return std::to_string(tokens) + " tk";
+    } else {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.1fk tk", tokens / 1000.0);
+        return buf;
+    }
+}
+
+void subagent_display::print_done(int depth, int elapsed_ms, int32_t total_tokens,
                                    subagent_output_buffer * buffer) {
     std::string prefix = subagent_indent_prefix(depth);
 
@@ -125,13 +136,25 @@ void subagent_display::print_done(int depth, int elapsed_ms,
         buffer->write(DISPLAY_TYPE_RESET, "%s%s   %s%s%s ", prefix.c_str(), TREE_VERTICAL, TREE_CORNER_BOTTOM, TREE_HORIZONTAL, TREE_HORIZONTAL);
         buffer->write(DISPLAY_TYPE_INFO, "done");
 
-        if (elapsed_ms > 0) {
+        if (elapsed_ms > 0 || total_tokens > 0) {
             buffer->write(DISPLAY_TYPE_RESET, " ");
-            if (elapsed_ms < 1000) {
-                buffer->write(DISPLAY_TYPE_REASONING, "(%dms)", elapsed_ms);
-            } else {
-                buffer->write(DISPLAY_TYPE_REASONING, "(%.1fs)", elapsed_ms / 1000.0);
+            buffer->write(DISPLAY_TYPE_REASONING, "(");
+            bool need_comma = false;
+            if (elapsed_ms > 0) {
+                if (elapsed_ms < 1000) {
+                    buffer->write(DISPLAY_TYPE_REASONING, "%dms", elapsed_ms);
+                } else {
+                    buffer->write(DISPLAY_TYPE_REASONING, "%.1fs", elapsed_ms / 1000.0);
+                }
+                need_comma = true;
             }
+            if (total_tokens > 0) {
+                if (need_comma) {
+                    buffer->write(DISPLAY_TYPE_REASONING, ", ");
+                }
+                buffer->write(DISPLAY_TYPE_REASONING, "%s", format_tokens(total_tokens).c_str());
+            }
+            buffer->write(DISPLAY_TYPE_REASONING, ")");
         }
         buffer->write(DISPLAY_TYPE_RESET, "\n");
     } else {
@@ -143,14 +166,26 @@ void subagent_display::print_done(int depth, int elapsed_ms,
         guard.write("done");
         guard.set_display(DISPLAY_TYPE_RESET);
 
-        if (elapsed_ms > 0) {
+        if (elapsed_ms > 0 || total_tokens > 0) {
             guard.write(" ");
             guard.set_display(DISPLAY_TYPE_REASONING);
-            if (elapsed_ms < 1000) {
-                guard.write("(%dms)", elapsed_ms);
-            } else {
-                guard.write("(%.1fs)", elapsed_ms / 1000.0);
+            guard.write("(");
+            bool need_comma = false;
+            if (elapsed_ms > 0) {
+                if (elapsed_ms < 1000) {
+                    guard.write("%dms", elapsed_ms);
+                } else {
+                    guard.write("%.1fs", elapsed_ms / 1000.0);
+                }
+                need_comma = true;
             }
+            if (total_tokens > 0) {
+                if (need_comma) {
+                    guard.write(", ");
+                }
+                guard.write("%s", format_tokens(total_tokens).c_str());
+            }
+            guard.write(")");
             guard.set_display(DISPLAY_TYPE_RESET);
         }
         guard.write("\n");
@@ -195,7 +230,7 @@ subagent_display::scope::~scope() {
     display_.depth_.fetch_sub(1);
 
     if (!done_reported_) {
-        display_.print_done(depth_, 0, buffer_);
+        display_.print_done(depth_, 0, 0, buffer_);
     }
 }
 
@@ -206,8 +241,8 @@ void subagent_display::scope::report_tool_call(const std::string & tool_name,
     display_.print_tool_call(depth_, tool_name, args_summary, elapsed_ms, buffer_);
 }
 
-void subagent_display::scope::report_done(int elapsed_ms) {
+void subagent_display::scope::report_done(int elapsed_ms, int32_t total_tokens) {
     std::lock_guard<std::mutex> lock(display_.mtx_);
-    display_.print_done(depth_, elapsed_ms, buffer_);
+    display_.print_done(depth_, elapsed_ms, total_tokens, buffer_);
     done_reported_ = true;
 }
