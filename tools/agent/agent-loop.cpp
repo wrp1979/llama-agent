@@ -45,6 +45,7 @@ agent_loop::agent_loop(server_context & server_ctx,
                        const agent_config & config,
                        std::atomic<bool> & is_interrupted)
     : server_ctx_(server_ctx)
+    , params_(&params)
     , config_(config)
     , is_interrupted_(is_interrupted)
     , messages_(json::array())
@@ -65,9 +66,37 @@ agent_loop::agent_loop(server_context & server_ctx,
     tool_ctx_.is_interrupted = &is_interrupted_;
     tool_ctx_.timeout_ms = config.tool_timeout_ms;
 
+    // Subagent support: store pointers to server context and config
+    tool_ctx_.server_ctx_ptr = &server_ctx_;
+    tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
+    tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
+    tool_ctx_.subagent_depth = 0;
+
     // Set up permission manager
     permission_mgr_.set_project_root(tool_ctx_.working_dir);
     permission_mgr_.set_yolo_mode(config.yolo_mode);
+
+    // Base prompt shared with subagents for KV cache prefix sharing
+    // Subagent prompts start with this exact text to maximize cache hits
+    static const char * BASE_PROMPT_PREFIX = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
+
+You help users with software engineering tasks by reading files, writing code, running commands, and navigating codebases. You run entirely on the user's machine - no data leaves their system.
+
+# Tools
+
+You have access to the following tools:
+
+- **bash**: Execute shell commands. Use for git, build commands, running tests, etc.
+- **read**: Read file contents with line numbers. Always read files before editing them.
+- **write**: Create new files or overwrite existing ones.
+- **edit**: Make targeted edits using search/replace. The old_string must match exactly. Use replace_all=true to replace all occurrences of a word or phrase.
+- **glob**: Find files matching a pattern. Use to explore project structure.
+
+)";
+
+    // Store base prompt for subagents to inherit (enables KV cache prefix sharing)
+    tool_ctx_.base_system_prompt = BASE_PROMPT_PREFIX;
 
     // Add system prompt for tool usage
     std::string system_prompt = R"(You are llama-agent, a powerful local AI coding assistant running on llama.cpp.
@@ -218,6 +247,60 @@ If a skill has `<allowed_tools>`, it declares which tools it needs. This helps y
     });
 }
 
+// Constructor for subagents with filtered tools and custom system prompt
+agent_loop::agent_loop(server_context & server_ctx,
+                       const common_params & params,
+                       const agent_config & config,
+                       std::atomic<bool> & is_interrupted,
+                       const std::set<std::string> & allowed_tools,
+                       const std::vector<std::string> & bash_patterns,
+                       const std::string & custom_system_prompt,
+                       int subagent_depth,
+                       tool_call_callback on_tool_call)
+    : server_ctx_(server_ctx)
+    , params_(&params)
+    , config_(config)
+    , is_interrupted_(is_interrupted)
+    , messages_(json::array())
+    , allowed_tools_(allowed_tools)
+    , bash_patterns_(bash_patterns)
+    , on_tool_call_(on_tool_call)
+    , is_subagent_(true)
+{
+    // Initialize task defaults from params
+    task_defaults_.sampling    = params.sampling;
+    task_defaults_.speculative = params.speculative;
+    task_defaults_.n_keep      = params.n_keep;
+    task_defaults_.n_predict   = params.n_predict;
+    task_defaults_.antiprompt  = params.antiprompt;
+    task_defaults_.stream      = true;
+    task_defaults_.timings_per_token = true;
+    task_defaults_.oaicompat_chat_syntax.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+    task_defaults_.oaicompat_chat_syntax.parse_tool_calls = true;
+
+    // Initialize tool context
+    tool_ctx_.working_dir = config.working_dir.empty() ? "." : config.working_dir;
+    tool_ctx_.is_interrupted = &is_interrupted_;
+    tool_ctx_.timeout_ms = config.tool_timeout_ms;
+
+    // Subagent support: store pointers to server context and config
+    tool_ctx_.server_ctx_ptr = &server_ctx_;
+    tool_ctx_.agent_config_ptr = const_cast<agent_config *>(&config_);
+    tool_ctx_.common_params_ptr = const_cast<common_params *>(&params);
+    tool_ctx_.session_stats_ptr = &stats_;
+    tool_ctx_.subagent_depth = subagent_depth;
+
+    // Set up permission manager
+    permission_mgr_.set_project_root(tool_ctx_.working_dir);
+    permission_mgr_.set_yolo_mode(config.yolo_mode);
+
+    // Use custom system prompt provided by caller
+    messages_.push_back({
+        {"role", "system"},
+        {"content", custom_system_prompt}
+    });
+}
+
 void agent_loop::clear() {
     // Keep system prompt, clear rest
     if (messages_.size() > 1) {
@@ -226,6 +309,9 @@ void agent_loop::clear() {
         messages_.push_back(system_msg);
     }
     permission_mgr_.clear_session();
+
+    // Reset stats when conversation is cleared
+    stats_ = session_stats{};
 }
 
 common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
@@ -237,7 +323,10 @@ common_chat_msg agent_loop::generate_completion(result_timings & out_timings) {
         task.params    = task_defaults_;
 
         // Build tools JSON in OAI-compatible format
-        auto chat_tools = tool_registry::instance().to_chat_tools();
+        // Subagents use filtered tools, main agent uses all tools
+        auto chat_tools = allowed_tools_.empty()
+            ? tool_registry::instance().to_chat_tools()
+            : tool_registry::instance().to_chat_tools_filtered(allowed_tools_);
         json tools_json = common_chat_tools_to_json_oaicompat<json>(chat_tools);
 
         // Pass both messages and tools as extended cli_input format
@@ -446,53 +535,67 @@ tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
     // Record this call
     permission_mgr_.record_tool_call(call.name, args_hash);
 
-    // Display tool execution
-    console::set_display(DISPLAY_TYPE_INFO);
-    console::log("\n› %s ", call.name.c_str());
-    console::spinner::start();
-    console::set_display(DISPLAY_TYPE_RESET);
+    // Display tool execution (only for main agent)
+    if (!is_subagent_) {
+        console::set_display(DISPLAY_TYPE_INFO);
+        console::log("\n› %s ", call.name.c_str());
+        console::spinner::start();
+        console::set_display(DISPLAY_TYPE_RESET);
+    }
 
     // Execute the tool with timing
+    // Use filtered execution for subagents with bash restrictions (e.g., read-only explore)
     auto start_time = std::chrono::steady_clock::now();
-    tool_result result = registry.execute(call.name, args, tool_ctx_);
+    tool_result result = bash_patterns_.empty()
+        ? registry.execute(call.name, args, tool_ctx_)
+        : registry.execute_filtered(call.name, args, tool_ctx_, bash_patterns_);
     auto end_time = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
-    console::spinner::stop();
+    if (!is_subagent_) {
+        console::spinner::stop();
 
-    // Display result summary
-    if (result.success) {
-        // Truncate long output for display
-        std::string display_output = result.output;
-        if (display_output.length() > 500) {
-            display_output = display_output.substr(0, 500) + "\n... (truncated)";
-        }
-        console::log("%s\n", display_output.c_str());
-    } else {
-        // Show output if available (e.g., bash stderr), plus error if set
-        if (!result.output.empty()) {
+        // Display result summary
+        if (result.success) {
+            // Truncate long output for display
             std::string display_output = result.output;
             if (display_output.length() > 500) {
                 display_output = display_output.substr(0, 500) + "\n... (truncated)";
             }
-            console::error("%s\n", display_output.c_str());
+            console::log("%s\n", display_output.c_str());
+        } else {
+            // Show output if available (e.g., bash stderr), plus error if set
+            if (!result.output.empty()) {
+                std::string display_output = result.output;
+                if (display_output.length() > 500) {
+                    display_output = display_output.substr(0, 500) + "\n... (truncated)";
+                }
+                console::error("%s\n", display_output.c_str());
+            }
+            if (!result.error.empty()) {
+                console::error("Error: %s\n", result.error.c_str());
+            }
+            if (result.output.empty() && result.error.empty()) {
+                console::error("Error: Tool failed with no output\n");
+            }
         }
-        if (!result.error.empty()) {
-            console::error("Error: %s\n", result.error.c_str());
-        }
-        if (result.output.empty() && result.error.empty()) {
-            console::error("Error: Tool failed with no output\n");
-        }
-    }
 
-    // Display elapsed time
-    console::set_display(DISPLAY_TYPE_INFO);
-    if (elapsed_ms < 1000) {
-        console::log("└─ %lldms\n", (long long)elapsed_ms);
-    } else {
-        console::log("└─ %.1fs\n", elapsed_ms / 1000.0);
+        // Display elapsed time
+        console::set_display(DISPLAY_TYPE_INFO);
+        if (elapsed_ms < 1000) {
+            console::log("└─ %lldms\n", (long long)elapsed_ms);
+        } else {
+            console::log("└─ %.1fs\n", elapsed_ms / 1000.0);
+        }
+        console::set_display(DISPLAY_TYPE_RESET);
+    } else if (on_tool_call_) {
+        // Report to parent via callback for subagents
+        std::string args_summary = call.arguments;
+        if (args_summary.length() > 60) {
+            args_summary = args_summary.substr(0, 60) + "...";
+        }
+        on_tool_call_(call.name, args_summary, static_cast<int>(elapsed_ms));
     }
-    console::set_display(DISPLAY_TYPE_RESET);
 
     return result;
 }

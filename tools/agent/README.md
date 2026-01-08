@@ -54,6 +54,104 @@ llama-agent -hf unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Q5_K_M
 | `write` | Create or overwrite files |
 | `edit` | Search and replace in files |
 | `glob` | Find files matching a pattern |
+| `task` | Spawn a subagent for complex tasks |
+
+## Subagents
+
+Subagents are specialized child agents that handle complex tasks independently, keeping the main conversation context clean and efficient.
+
+### Why Subagents?
+
+Without subagents, every file read and search pollutes your main context:
+
+```
+Main context after exploring codebase:
+├── glob **/*.cpp → 50 files (800 tokens)
+├── read src/main.cpp → full file (1,500 tokens)
+├── read src/utils.cpp → full file (2,200 tokens)
+├── grep "TODO" → 100 matches (1,200 tokens)
+└── Total: ~5,700 tokens consumed for ONE exploration
+```
+
+With subagents, only the summary enters main context:
+
+```
+Main context:
+└── task(explore) → "Found 3 TODO items in src/main.cpp:42,87,156" (50 tokens)
+
+Subagent context (discarded after):
+├── All the detailed exploration (~5,700 tokens)
+└── Summarized to parent
+```
+
+### Subagent Types
+
+| Type | Purpose | Tools Available |
+|------|---------|-----------------|
+| `explore` | Search and understand code (read-only) | `glob`, `read`, `bash` (read-only commands only) |
+| `bash` | Execute shell commands | `bash` |
+| `plan` | Design implementation approaches | `glob`, `read`, `bash` |
+| `general` | General-purpose tasks | All tools |
+
+### How It Works
+
+```
+┌─────────────────┐
+│   Main Agent    │  "Find where errors are handled"
+└────────┬────────┘
+         │ task(explore, "find error handling")
+         ▼
+┌─────────────────┐
+│    Subagent     │  Does detailed exploration:
+│    (explore)    │  - glob **/*.cpp
+│                 │  - read 5 files
+│                 │  - grep patterns
+└────────┬────────┘
+         │ Returns summary only
+         ▼
+┌─────────────────┐
+│   Main Agent    │  Receives: "Errors handled in src/error.cpp:45
+│                 │  via ErrorHandler class..."
+└─────────────────┘
+```
+
+### Memory Efficiency
+
+Subagents share the model - no additional VRAM is used:
+
+| Resource | Main Agent | Subagent | Total |
+|----------|------------|----------|-------|
+| Model weights | ✓ | Shared | 1x |
+| KV cache | ✓ | Shared via slots | 1x |
+| Context window | Own | Own (discarded after) | Efficient |
+
+### Parallel Execution
+
+Multiple subagents can run in the background simultaneously:
+
+```
+> Run tests and check for lint errors at the same time
+
+[task-a1b2] ┌── ⚡ run-tests (bash)
+[task-c3d4] ┌── ⚡ check-lint (bash)
+[task-a1b2] │   ├─› bash npm test (2.1s)
+[task-c3d4] │   ├─› bash npm run lint (1.8s)
+[task-c3d4] │   └── done (1.8s)
+[task-a1b2] │   └── done (2.1s)
+```
+
+### KV Cache Prefix Sharing
+
+Subagent prompts share a common prefix with the main agent, enabling automatic KV cache reuse:
+
+```
+Main agent prompt:    "You are llama-agent... [base] + [main agent instructions]"
+Subagent prompt:      "You are llama-agent... [base] + # Subagent Mode: explore..."
+                       ↑─────── shared prefix ──────↑
+                       Cached tokens reused, not re-processed
+```
+
+This reduces subagent startup latency and saves compute.
 
 ## Usage Examples
 

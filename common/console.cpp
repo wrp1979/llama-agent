@@ -83,6 +83,10 @@ namespace console {
 
     static bool         bracket_paste_mode = false;  // true when inside ESC[200~ ... ESC[201~
 
+    // Thread-safety mutex for console operations
+    // Protects: current_display, out (FILE*), and all console output operations
+    static std::mutex   g_console_mutex;
+
     //
     // Init and cleanup
     //
@@ -179,7 +183,8 @@ namespace console {
     //
 
     // Keep track of current display and only emit ANSI code if it changes
-    void set_display(display_type display) {
+    // Internal version without lock (for use when lock is already held)
+    static void set_display_unlocked(display_type display) {
         if (advanced_display && current_display != display) {
             common_log_flush(common_log_main());
             switch(display) {
@@ -200,10 +205,19 @@ namespace console {
                     break;
                 case DISPLAY_TYPE_ERROR:
                     fprintf(out, ANSI_BOLD ANSI_COLOR_RED);
+                    break;
+                case DISPLAY_TYPE_SUBAGENT:
+                    fprintf(out, ANSI_BOLD ANSI_COLOR_CYAN);
+                    break;
             }
             current_display = display;
             fflush(out);
         }
+    }
+
+    void set_display(display_type display) {
+        std::lock_guard<std::mutex> lock(g_console_mutex);
+        set_display_unlocked(display);
     }
 
     static char32_t getchar32() {
@@ -1194,6 +1208,7 @@ namespace console {
     }
 
     void log(const char * fmt, ...) {
+        std::lock_guard<std::mutex> lock(g_console_mutex);
         va_list args;
         va_start(args, fmt);
         vfprintf(out, fmt, args);
@@ -1201,16 +1216,45 @@ namespace console {
     }
 
     void error(const char * fmt, ...) {
+        std::lock_guard<std::mutex> lock(g_console_mutex);
         va_list args;
         va_start(args, fmt);
         display_type cur = current_display;
-        set_display(DISPLAY_TYPE_ERROR);
+        set_display_unlocked(DISPLAY_TYPE_ERROR);
         vfprintf(out, fmt, args);
-        set_display(cur); // restore previous color
+        set_display_unlocked(cur); // restore previous color
         va_end(args);
     }
 
     void flush() {
+        std::lock_guard<std::mutex> lock(g_console_mutex);
+        fflush(out);
+    }
+
+    //
+    // output_guard implementation
+    //
+
+    output_guard::output_guard() {
+        g_console_mutex.lock();
+    }
+
+    output_guard::~output_guard() {
+        g_console_mutex.unlock();
+    }
+
+    void output_guard::write(const char * fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(out, fmt, args);
+        va_end(args);
+    }
+
+    void output_guard::set_display(display_type type) {
+        set_display_unlocked(type);
+    }
+
+    void output_guard::flush() {
         fflush(out);
     }
 }
