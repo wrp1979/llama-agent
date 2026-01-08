@@ -2,6 +2,7 @@
 
 #include "tool-registry.h"
 #include "permission.h"
+#include "permission-async.h"
 #include "chat.h"
 
 #include "server-context.h"
@@ -189,10 +190,12 @@ public:
     // This is the API-friendly version that emits events instead of console output
     // The callback is called for each event (text deltas, tool calls, permissions, etc.)
     // should_stop is polled to check if the client wants to abort
+    // async_perms: optional async permission manager for non-blocking permission handling
     agent_loop_result run_streaming(
         const std::string & user_prompt,
         agent_event_callback on_event,
-        std::function<bool()> should_stop = nullptr);
+        std::function<bool()> should_stop = nullptr,
+        permission_manager_async * async_perms = nullptr);
 
     // Clear conversation history
     void clear();
@@ -215,6 +218,14 @@ private:
 
     // Execute a single tool call
     tool_result execute_tool_call(const common_chat_tool_call & call);
+
+    // Execute tool call with async permission handling (for streaming API)
+    // Emits PERMISSION_REQUIRED events and waits for async responses
+    tool_result execute_tool_call_async(
+        const common_chat_tool_call & call,
+        agent_event_callback on_event,
+        permission_manager_async & async_perms,
+        std::function<bool()> should_stop);
 
     // Format tool result as message
     void add_tool_result_message(const std::string & tool_name,

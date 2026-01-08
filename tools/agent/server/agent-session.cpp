@@ -70,12 +70,14 @@ void agent_session::send_message(const std::string & content,
     }
 
     // Run in background thread
+    // Pass permissions_ for async permission handling (non-blocking)
     worker_thread_ = std::thread([this, content, on_event]() {
         auto should_stop = [this]() {
             return is_interrupted_.load();
         };
 
-        agent_loop_result result = loop_->run_streaming(content, on_event, should_stop);
+        // Pass async permission manager to avoid blocking on console prompts
+        agent_loop_result result = loop_->run_streaming(content, on_event, should_stop, &permissions_);
 
         {
             std::lock_guard<std::mutex> lock(result_mutex_);
