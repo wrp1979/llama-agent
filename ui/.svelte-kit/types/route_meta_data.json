@@ -24,6 +24,9 @@
 	"/api/models/[id]": [
 		"src/routes/api/models/[id]/+server.ts"
 	],
+	"/api/system/hardware": [
+		"src/routes/api/system/hardware/+server.ts"
+	],
 	"/api/system/status": [
 		"src/routes/api/system/status/+server.ts"
 	],
