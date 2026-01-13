@@ -7,7 +7,7 @@ MODEL_PATH="${MODEL_DIR}/${MODEL_NAME}"
 HF_REPO="unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF"
 STATUS_FILE="${MODEL_DIR}/.download-status.json"
 SERVER_HOST="${LLAMA_ARG_HOST:-0.0.0.0}"
-SERVER_PORT="${LLAMA_ARG_PORT:-8080}"
+SERVER_PORT="${LLAMA_ARG_PORT:-8081}"
 
 # Colors
 RED='\033[0;31m'
@@ -19,7 +19,7 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║              llama-agent container starting                ║"
+echo "║           llama-agent-server container starting            ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -35,16 +35,17 @@ if [ -f "${MODEL_PATH}" ]; then
 
     echo ""
     echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│  STARTING LLAMA SERVER                                     │${NC}"
+    echo -e "${CYAN}│  STARTING LLAMA-AGENT-SERVER                               │${NC}"
     echo -e "${CYAN}├────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│  Host: ${NC}${SERVER_HOST}:${SERVER_PORT}"
     echo -e "${CYAN}│  GPU Layers: ${NC}${LLAMA_ARG_N_GPU_LAYERS:-999}"
     echo -e "${CYAN}│  Model: ${NC}${MODEL_NAME}"
+    echo -e "${CYAN}│  API: ${NC}http://localhost:${SERVER_PORT}/v1/agent"
     echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
-    # Start server with model
-    exec ./llama-server \
+    # Start llama-agent-server with model
+    exec ./llama-agent-server \
         -m "${MODEL_PATH}" \
         --host "${SERVER_HOST}" \
         --port "${SERVER_PORT}" \
@@ -60,12 +61,12 @@ else
     echo -e "${BLUE}│  Repo:  ${NC}${HF_REPO}"
     echo -e "${BLUE}│  Size:  ${NC}~48.5 GB"
     echo -e "${BLUE}│                                                            │${NC}"
-    echo -e "${BLUE}│  ${GREEN}Progress available at :8081/status${BLUE}                      │${NC}"
+    echo -e "${BLUE}│  ${GREEN}Progress available at :8082/status${BLUE}                      │${NC}"
     echo -e "${BLUE}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
-    # Start download monitor in background (exposes status on port 8081)
-    python3 /app/download-monitor.py "${HF_REPO}" "${MODEL_NAME}" "${MODEL_DIR}" &
+    # Start download monitor in background (exposes status on port 8082)
+    STATUS_PORT=8082 python3 /app/download-monitor.py "${HF_REPO}" "${MODEL_NAME}" "${MODEL_DIR}" &
     MONITOR_PID=$!
 
     # Wait a bit for the status server to start
@@ -73,34 +74,30 @@ else
 
     echo ""
     echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│  STARTING LLAMA SERVER (Router Mode)                       │${NC}"
+    echo -e "${CYAN}│  WAITING FOR MODEL DOWNLOAD                                │${NC}"
     echo -e "${CYAN}├────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│  Host: ${NC}${SERVER_HOST}:${SERVER_PORT}"
-    echo -e "${CYAN}│  Mode: ${NC}Router (model downloading in background)"
-    echo -e "${CYAN}│  Status: ${NC}http://localhost:8081/status"
+    echo -e "${CYAN}│  Download Status: ${NC}http://localhost:8082/status"
+    echo -e "${CYAN}│  Agent API will start after download completes             │${NC}"
     echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
-
-    # Start server in router mode
-    ./llama-server \
-        --host "${SERVER_HOST}" \
-        --port "${SERVER_PORT}" \
-        "$@" &
-    SERVER_PID=$!
 
     # Wait for download to complete
     wait $MONITOR_PID 2>/dev/null
     MONITOR_EXIT=$?
 
-    # If download succeeded, reload the model
+    # If download succeeded, start the server
     if [ $MONITOR_EXIT -eq 0 ] && [ -f "${MODEL_PATH}" ]; then
-        echo -e "${GREEN}✓ Download complete, loading model...${NC}"
+        echo -e "${GREEN}✓ Download complete, starting llama-agent-server...${NC}"
         sleep 2
-        curl -s -X POST "http://127.0.0.1:${SERVER_PORT}/models/load" \
-            -H "Content-Type: application/json" \
-            -d "{\"model\": \"${MODEL_PATH}\", \"n_gpu_layers\": ${LLAMA_ARG_N_GPU_LAYERS:-999}}" || true
-    fi
 
-    # Wait for server
-    wait $SERVER_PID
+        exec ./llama-agent-server \
+            -m "${MODEL_PATH}" \
+            --host "${SERVER_HOST}" \
+            --port "${SERVER_PORT}" \
+            -ngl "${LLAMA_ARG_N_GPU_LAYERS:-999}" \
+            "$@"
+    else
+        echo -e "${RED}✗ Download failed${NC}"
+        exit 1
+    fi
 fi
