@@ -1,20 +1,84 @@
+# Build artifacts
 *.o
 *.a
+*.so
+*.dylib
+build*/
 .cache/
-# Do not ignore .git directory, otherwise the reported build number will always be 0
-.github/
+out/
+compile_commands.json
+
+# Models and large binary files
+models/
+*.gguf
+*.bin
+*.safetensors
+*.pth
+*.pt
+*.onnx
+
+# Documentation and media (not needed for build)
+docs/
+media/
+*.md
+!requirements*.txt
+
+# Tests and benchmarks (not needed for runtime)
+tests/
+benches/
+
+# Git (large, not needed - version baked at build time)
+.git/
 .gitignore
+.gitmodules
+.gitattributes
+
+# CI/CD and IDE
+.github/
+.gitlab/
+ci/
 .vs/
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
 
-build*/
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
 
-models/*
+# Docker files (avoid recursive)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
 
+# Scripts not needed in container
+sync-llama-cpp.sh
+build-xcframework.sh
+
+# Logs and temp files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Local config
+.env
+.env.*
+*.local
+
+# Binaries that get rebuilt
 /llama-cli
 /llama-quantize
+/llama-server
 
+# Headers not needed (will be copied during build)
 arm_neon.h
-compile_commands.json
-Dockerfile
