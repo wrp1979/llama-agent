@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Cpu, HardDrive, Gauge, Thermometer, Database, Layers } from 'lucide-svelte';
+  import { Cpu, HardDrive, Gauge, Thermometer, Database, Layers, Loader2, AlertCircle } from 'lucide-svelte';
 
   interface SystemStatus {
     timestamp: number;
@@ -32,6 +32,13 @@
     active_model: string | null;
   }
 
+  interface SwitchStatus {
+    status: 'idle' | 'switching' | 'loading' | 'ready' | 'error';
+    message: string;
+    model: string;
+    timestamp: number;
+  }
+
   let {
     onSelectModel = (model: string) => {},
   }: {
@@ -39,18 +46,19 @@
   } = $props();
 
   let status = $state<SystemStatus | null>(null);
-  let hasLoaded = $state(false);  // Track if we've loaded at least once
+  let switchStatus = $state<SwitchStatus | null>(null);
+  let hasLoaded = $state(false);
   let error = $state<string | null>(null);
+  let switchingModel = $state<string | null>(null);
   let interval: ReturnType<typeof setInterval>;
+  let switchInterval: ReturnType<typeof setInterval> | null = null;
 
   async function fetchStatus() {
     try {
       const response = await fetch('/api/system/status');
       if (response.ok) {
         const data = await response.json();
-        // Update status in place without triggering full re-render
         if (status && data.status) {
-          // Update existing object properties
           Object.assign(status, data.status);
         } else {
           status = data.status;
@@ -65,6 +73,56 @@
       }
     } finally {
       hasLoaded = true;
+    }
+  }
+
+  async function fetchSwitchStatus() {
+    try {
+      const response = await fetch('/api/system/switch-model');
+      if (response.ok) {
+        const data = await response.json();
+        switchStatus = data.status;
+
+        // If switch completed (ready or error), stop polling
+        if (switchStatus && (switchStatus.status === 'ready' || switchStatus.status === 'error')) {
+          if (switchStatus.status === 'ready') {
+            switchingModel = null;
+            // Refresh system status to get new active model
+            await fetchStatus();
+          }
+          if (switchInterval) {
+            clearInterval(switchInterval);
+            switchInterval = null;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch switch status:', e);
+    }
+  }
+
+  async function handleSwitchModel(modelName: string) {
+    if (switchingModel) return; // Already switching
+
+    switchingModel = modelName;
+    switchStatus = { status: 'switching', message: 'Requesting model switch...', model: modelName, timestamp: Date.now() / 1000 };
+
+    try {
+      const response = await fetch('/api/system/switch-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to request model switch');
+      }
+
+      // Start polling for switch status
+      switchInterval = setInterval(fetchSwitchStatus, 2000);
+    } catch (e) {
+      switchingModel = null;
+      switchStatus = { status: 'error', message: 'Failed to request model switch', model: modelName, timestamp: Date.now() / 1000 };
     }
   }
 
@@ -102,6 +160,7 @@
 
   onDestroy(() => {
     if (interval) clearInterval(interval);
+    if (switchInterval) clearInterval(switchInterval);
   });
 
   // Derived values
@@ -235,16 +294,43 @@
         <h3 class="font-semibold text-gray-200">Models</h3>
       </div>
 
+      <!-- Switch status banner -->
+      {#if switchingModel && switchStatus}
+        <div class="mb-3 p-3 rounded-lg {switchStatus.status === 'error' ? 'bg-red-900/30 border border-red-700/50' : 'bg-yellow-900/30 border border-yellow-700/50'}">
+          <div class="flex items-center gap-2">
+            {#if switchStatus.status === 'error'}
+              <AlertCircle class="h-4 w-4 text-red-400" />
+              <span class="text-sm text-red-300">{switchStatus.message}</span>
+            {:else}
+              <Loader2 class="h-4 w-4 text-yellow-400 animate-spin" />
+              <span class="text-sm text-yellow-300">{switchStatus.message}</span>
+            {/if}
+          </div>
+          {#if switchStatus.status === 'error'}
+            <button
+              onclick={() => { switchingModel = null; switchStatus = null; }}
+              class="mt-2 text-xs text-red-400 hover:text-red-300"
+            >
+              Dismiss
+            </button>
+          {/if}
+        </div>
+      {/if}
+
       {#if status.models.length === 0}
         <p class="text-sm text-gray-500">No models found</p>
       {:else}
         <div class="space-y-2">
           {#each status.models as model}
             <div
-              class="flex items-center justify-between p-2 rounded-lg transition-colors {model.name === status.active_model ? 'bg-primary-900/30 border border-primary-700/50' : 'hover:bg-gray-700/50'}"
+              class="flex items-center justify-between p-2 rounded-lg transition-colors {model.name === status.active_model ? 'bg-primary-900/30 border border-primary-700/50' : 'hover:bg-gray-700/50'} {switchingModel === model.name ? 'opacity-70' : ''}"
             >
               <div class="flex items-center gap-2 min-w-0">
-                <Database class="h-4 w-4 flex-shrink-0 {model.name === status.active_model ? 'text-primary-400' : 'text-gray-500'}" />
+                {#if switchingModel === model.name}
+                  <Loader2 class="h-4 w-4 flex-shrink-0 text-yellow-400 animate-spin" />
+                {:else}
+                  <Database class="h-4 w-4 flex-shrink-0 {model.name === status.active_model ? 'text-primary-400' : 'text-gray-500'}" />
+                {/if}
                 <div class="min-w-0">
                   <p class="text-sm truncate {model.name === status.active_model ? 'text-primary-300 font-medium' : 'text-gray-300'}">
                     {model.name.replace('.gguf', '')}
@@ -254,10 +340,13 @@
               </div>
               {#if model.name === status.active_model}
                 <span class="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full">Active</span>
+              {:else if switchingModel === model.name}
+                <span class="text-xs text-yellow-400">Loading...</span>
               {:else}
                 <button
-                  onclick={() => onSelectModel(model.name)}
-                  class="text-xs text-gray-400 hover:text-primary-400 px-2 py-1 rounded hover:bg-gray-700"
+                  onclick={() => handleSwitchModel(model.name)}
+                  disabled={!!switchingModel}
+                  class="text-xs text-gray-400 hover:text-primary-400 px-2 py-1 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Load
                 </button>
