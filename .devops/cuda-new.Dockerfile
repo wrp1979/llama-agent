@@ -41,7 +41,7 @@ COPY examples/ examples/
 COPY scripts/ scripts/
 COPY pocs/ pocs/
 
-# Configure and build
+# Configure and build (with HTTPLIB for llama-agent-server)
 RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
     fi && \
@@ -51,6 +51,7 @@ RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         -DGGML_BACKEND_DL=ON \
         -DGGML_CPU_ALL_VARIANTS=ON \
         -DLLAMA_BUILD_TESTS=OFF \
+        -DLLAMA_HTTPLIB=ON \
         ${CMAKE_ARGS} \
         -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined . && \
     cmake --build build --config Release -j$(nproc)
