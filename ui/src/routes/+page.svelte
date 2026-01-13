@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Bot, Plus, Trash2, Terminal, Zap } from 'lucide-svelte';
+  import { Bot, Plus, Trash2, Terminal, Zap, LayoutDashboard } from 'lucide-svelte';
   import ChatMessage from '$lib/components/ChatMessage.svelte';
   import ChatInput from '$lib/components/ChatInput.svelte';
   import PermissionDialog from '$lib/components/PermissionDialog.svelte';
   import ServerSelector from '$lib/components/ServerSelector.svelte';
   import ServerDialog from '$lib/components/ServerDialog.svelte';
+  import SystemStatus from '$lib/components/SystemStatus.svelte';
   import { serversStore } from '$lib/stores/servers.svelte';
   import { sessionsStore, type DbSession } from '$lib/stores/sessions.svelte';
   import {
@@ -30,6 +31,9 @@
   let showServerDialog = $state(false);
   let editingServer = $state<AgentServer | null>(null);
   let isNewServer = $state(false);
+
+  // Dashboard view state
+  let showDashboard = $state(false);
 
   // Derived state
   let activeServer = $derived(serversStore.activeServer);
@@ -136,6 +140,7 @@
 
   // Select session
   async function handleSelectSession(session: DbSession) {
+    showDashboard = false;
     currentDbSession = session;
     await loadMessages();
     scrollToBottom();
@@ -406,7 +411,7 @@
       />
     </div>
 
-    <div class="p-3">
+    <div class="p-3 space-y-2">
       <button
         onclick={handleNewSession}
         disabled={isLoading || activeServer?.status !== 'connected'}
@@ -414,6 +419,14 @@
       >
         <Plus class="h-4 w-4" />
         New Session
+      </button>
+      <button
+        onclick={() => { showDashboard = true; currentDbSession = null; messages = []; }}
+        disabled={activeServer?.status !== 'connected'}
+        class="btn w-full gap-2 {showDashboard ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
+      >
+        <LayoutDashboard class="h-4 w-4" />
+        Dashboard
       </button>
     </div>
 
@@ -486,37 +499,46 @@
 
   <!-- Main chat area -->
   <main class="flex-1 flex flex-col min-w-0">
-    <!-- Messages -->
+    <!-- Messages / Dashboard -->
     <div bind:this={messagesContainer} class="flex-1 overflow-y-auto p-4 space-y-3">
-      {#if messages.length === 0}
-        <div class="flex flex-col items-center justify-center h-full text-center">
-          <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 mb-4">
-            <Terminal class="h-8 w-8 text-purple-400" />
-          </div>
-          <h2 class="text-xl font-semibold text-gray-200 mb-2">llama-agent</h2>
-          <p class="text-gray-500 max-w-md">
+      {#if showDashboard || messages.length === 0}
+        <div class="flex flex-col items-center justify-center h-full">
+          <div class="w-full max-w-lg">
             {#if activeServer?.status !== 'connected'}
-              Connect to a server to start chatting with the agent.
+              <div class="text-center mb-6">
+                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 mb-4 mx-auto">
+                  <Terminal class="h-8 w-8 text-purple-400" />
+                </div>
+                <h2 class="text-xl font-semibold text-gray-200 mb-2">llama-agent</h2>
+                <p class="text-gray-500">Connect to a server to start chatting with the agent.</p>
+              </div>
             {:else}
-              A coding agent that runs entirely inside llama.cpp. Ask me to explore code, run commands, edit files, and more.
+              <div class="text-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-200 mb-2">System Status</h2>
+                <p class="text-gray-500 text-sm">Agent server resources and available models</p>
+              </div>
+
+              <SystemStatus onSelectModel={(model) => console.log('Load model:', model)} />
+
+              <div class="mt-6">
+                <p class="text-xs text-gray-500 text-center mb-3">Quick prompts</p>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                  <button onclick={() => { showDashboard = false; handleSend('List files in the current directory'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                    <span class="text-gray-400">List files</span>
+                  </button>
+                  <button onclick={() => { showDashboard = false; handleSend('What tools do you have available?'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                    <span class="text-gray-400">List tools</span>
+                  </button>
+                  <button onclick={() => { showDashboard = false; handleSend('Find all TODO comments in this project'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                    <span class="text-gray-400">Find TODOs</span>
+                  </button>
+                  <button onclick={() => { showDashboard = false; handleSend('Explain the project structure'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                    <span class="text-gray-400">Project structure</span>
+                  </button>
+                </div>
+              </div>
             {/if}
-          </p>
-          {#if activeServer?.status === 'connected'}
-            <div class="mt-6 grid grid-cols-2 gap-3 text-sm">
-              <button onclick={() => handleSend('List files in the current directory')} class="card hover:bg-gray-800/50 transition-colors text-left">
-                <span class="text-gray-400">List files in the current directory</span>
-              </button>
-              <button onclick={() => handleSend('What tools do you have available?')} class="card hover:bg-gray-800/50 transition-colors text-left">
-                <span class="text-gray-400">What tools do you have available?</span>
-              </button>
-              <button onclick={() => handleSend('Find all TODO comments in this project')} class="card hover:bg-gray-800/50 transition-colors text-left">
-                <span class="text-gray-400">Find all TODO comments</span>
-              </button>
-              <button onclick={() => handleSend('Explain the project structure')} class="card hover:bg-gray-800/50 transition-colors text-left">
-                <span class="text-gray-400">Explain the project structure</span>
-              </button>
-            </div>
-          {/if}
+          </div>
         </div>
       {:else}
         {#each messages as message (message.id)}
