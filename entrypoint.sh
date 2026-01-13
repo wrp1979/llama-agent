@@ -25,65 +25,13 @@ echo -e "${NC}"
 
 mkdir -p "${MODEL_DIR}"
 
-# Function to update status file
-update_status() {
-    local status="$1"
-    local message="$2"
-    local progress="$3"
-    echo "{\"status\":\"${status}\",\"model\":\"${MODEL_NAME}\",\"message\":\"${message}\",\"progress\":${progress:-0},\"timestamp\":\"$(date -Iseconds)\"}" > "${STATUS_FILE}"
-}
-
-# Function to download model in background
-download_model() {
-    update_status "downloading" "Starting download..." 0
-
-    echo -e "${YELLOW}⚠ Model not found locally${NC}"
-    echo ""
-    echo -e "${BLUE}┌────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BLUE}│  DOWNLOADING MODEL IN BACKGROUND                           │${NC}"
-    echo -e "${BLUE}├────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${BLUE}│  Model: ${NC}${MODEL_NAME}"
-    echo -e "${BLUE}│  Repo:  ${NC}${HF_REPO}"
-    echo -e "${BLUE}│  Size:  ${NC}~48.5 GB"
-    echo -e "${BLUE}│                                                            │${NC}"
-    echo -e "${BLUE}│  ${GREEN}Server is running - check UI for progress${BLUE}              │${NC}"
-    echo -e "${BLUE}└────────────────────────────────────────────────────────────┘${NC}"
-    echo ""
-
-    # Download with hf CLI
-    if huggingface-cli download "${HF_REPO}" "${MODEL_NAME}" \
-        --local-dir "${MODEL_DIR}" \
-        --local-dir-use-symlinks False 2>&1; then
-
-        if [ -f "${MODEL_PATH}" ]; then
-            update_status "loading" "Download complete, loading model..." 100
-            echo -e "${GREEN}✓ Download complete!${NC}"
-
-            # Load the model via API
-            echo -e "${CYAN}Loading model into server...${NC}"
-            sleep 2  # Wait for server to be ready
-
-            curl -s -X POST "http://127.0.0.1:${SERVER_PORT}/models" \
-                -H "Content-Type: application/json" \
-                -d "{\"model\": \"${MODEL_PATH}\"}" || true
-
-            update_status "ready" "Model loaded and ready" 100
-            echo -e "${GREEN}✓ Model loaded!${NC}"
-        else
-            update_status "error" "Download failed - file not found" 0
-            echo -e "${RED}✗ Download failed!${NC}"
-        fi
-    else
-        update_status "error" "Download failed" 0
-        echo -e "${RED}✗ Download failed!${NC}"
-    fi
-}
-
 # Check if model exists
 if [ -f "${MODEL_PATH}" ]; then
     size=$(du -h "${MODEL_PATH}" | cut -f1)
     echo -e "${GREEN}✓ Model found: ${MODEL_NAME} (${size})${NC}"
-    update_status "ready" "Model available" 100
+
+    # Write ready status
+    echo "{\"status\":\"ready\",\"model\":\"${MODEL_NAME}\",\"message\":\"Model ready (${size})\",\"progress\":100}" > "${STATUS_FILE}"
 
     echo ""
     echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${NC}"
@@ -103,9 +51,25 @@ if [ -f "${MODEL_PATH}" ]; then
         -ngl "${LLAMA_ARG_N_GPU_LAYERS:-999}" \
         "$@"
 else
-    # Start download in background
-    download_model &
-    DOWNLOAD_PID=$!
+    echo -e "${YELLOW}⚠ Model not found locally${NC}"
+    echo ""
+    echo -e "${BLUE}┌────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│  DOWNLOADING MODEL                                         │${NC}"
+    echo -e "${BLUE}├────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${BLUE}│  Model: ${NC}${MODEL_NAME}"
+    echo -e "${BLUE}│  Repo:  ${NC}${HF_REPO}"
+    echo -e "${BLUE}│  Size:  ${NC}~48.5 GB"
+    echo -e "${BLUE}│                                                            │${NC}"
+    echo -e "${BLUE}│  ${GREEN}Progress available at :8081/status${BLUE}                      │${NC}"
+    echo -e "${BLUE}└────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+
+    # Start download monitor in background (exposes status on port 8081)
+    python3 /app/download-monitor.py "${HF_REPO}" "${MODEL_NAME}" "${MODEL_DIR}" &
+    MONITOR_PID=$!
+
+    # Wait a bit for the status server to start
+    sleep 2
 
     echo ""
     echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${NC}"
@@ -113,17 +77,30 @@ else
     echo -e "${CYAN}├────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│  Host: ${NC}${SERVER_HOST}:${SERVER_PORT}"
     echo -e "${CYAN}│  Mode: ${NC}Router (model downloading in background)"
+    echo -e "${CYAN}│  Status: ${NC}http://localhost:8081/status"
     echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
-    # Start server in router mode (no model)
+    # Start server in router mode
     ./llama-server \
         --host "${SERVER_HOST}" \
         --port "${SERVER_PORT}" \
         "$@" &
     SERVER_PID=$!
 
-    # Wait for either process to exit
-    wait $DOWNLOAD_PID 2>/dev/null || true
+    # Wait for download to complete
+    wait $MONITOR_PID 2>/dev/null
+    MONITOR_EXIT=$?
+
+    # If download succeeded, reload the model
+    if [ $MONITOR_EXIT -eq 0 ] && [ -f "${MODEL_PATH}" ]; then
+        echo -e "${GREEN}✓ Download complete, loading model...${NC}"
+        sleep 2
+        curl -s -X POST "http://127.0.0.1:${SERVER_PORT}/models/load" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\": \"${MODEL_PATH}\", \"n_gpu_layers\": ${LLAMA_ARG_N_GPU_LAYERS:-999}}" || true
+    fi
+
+    # Wait for server
     wait $SERVER_PID
 fi

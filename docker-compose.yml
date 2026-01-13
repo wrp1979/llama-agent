@@ -18,10 +18,12 @@ services:
               capabilities: [gpu]
     ports:
       - "8080:8080"
+      - "8081:8081"
     volumes:
       - ~/src:/src:ro
       - ./models:/models
       - ./entrypoint.sh:/app/entrypoint.sh:ro
+      - ./download-monitor.py:/app/download-monitor.py:ro
     environment:
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=8080
