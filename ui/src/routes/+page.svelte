@@ -384,12 +384,12 @@
   });
 </script>
 
-<div class="flex h-full">
+<div class="flex h-full bg-pattern">
   <!-- Sidebar -->
-  <aside class="w-64 flex-shrink-0 border-r border-gray-800 bg-gray-900/30 flex flex-col">
-    <div class="p-4 border-b border-gray-800">
+  <aside class="w-64 flex-shrink-0 border-r border-white/[0.06] bg-black/40 backdrop-blur-sm flex flex-col">
+    <div class="p-4 border-b border-white/[0.06]">
       <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 to-pink-600">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 shadow-lg shadow-primary-600/20">
           <Bot class="h-6 w-6 text-white" />
         </div>
         <div>
@@ -405,7 +405,7 @@
     </div>
 
     <!-- Server Selector -->
-    <div class="p-3 border-b border-gray-800">
+    <div class="p-3 border-b border-white/[0.06]">
       <ServerSelector
         servers={serversStore.servers}
         {activeServer}
@@ -427,14 +427,14 @@
       <button
         onclick={() => { showDashboard = true; currentDbSession = null; messages = []; }}
         disabled={activeServer?.status !== 'connected'}
-        class="btn w-full gap-2 {showDashboard ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
+        class="btn w-full gap-2 {showDashboard ? 'bg-white/10 text-white border border-white/10' : 'btn-secondary'}"
       >
         <LayoutDashboard class="h-4 w-4" />
         Dashboard
       </button>
       <button
         onclick={() => showMarketplace = true}
-        class="btn w-full gap-2 bg-gray-800 text-gray-300 hover:bg-gray-700"
+        class="btn btn-secondary w-full gap-2"
       >
         <Store class="h-4 w-4" />
         Get Models
@@ -453,7 +453,7 @@
               handleSelectSession(session);
             }
           }}
-          class="group w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer {currentDbSession?.id === session.id ? 'bg-gray-800 text-gray-100' : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'}"
+          class="group w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-all cursor-pointer {currentDbSession?.id === session.id ? 'bg-white/10 text-gray-100 border border-white/10' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200 border border-transparent'}"
         >
           <div class="truncate">
             {#if session.name && !session.name.startsWith('Session ')}
@@ -480,8 +480,8 @@
     </div>
 
     <!-- Settings -->
-    <div class="p-3 border-t border-gray-800 space-y-3">
-      <label class="flex items-center justify-between cursor-pointer">
+    <div class="p-3 border-t border-white/[0.06] space-y-3">
+      <label class="flex items-center justify-between cursor-pointer p-2 rounded-lg hover:bg-white/5 transition-colors -mx-2">
         <span class="text-sm text-gray-400 flex items-center gap-2">
           <Zap class="h-4 w-4" />
           YOLO Mode
@@ -489,19 +489,19 @@
         <input
           type="checkbox"
           bind:checked={yoloMode}
-          class="h-5 w-9 appearance-none rounded-full bg-gray-700 transition-colors checked:bg-primary-600 relative cursor-pointer after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform checked:after:translate-x-4"
+          class="h-5 w-9 appearance-none rounded-full bg-white/10 transition-colors checked:bg-primary-600 relative cursor-pointer after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform checked:after:translate-x-4"
         />
       </label>
 
       {#if stats}
-        <div class="text-xs text-gray-500 space-y-1">
+        <div class="text-xs text-gray-500 space-y-1 p-2 rounded-lg bg-white/[0.02]">
           <div class="flex justify-between">
             <span>Input tokens:</span>
-            <span class="font-mono">{stats.input_tokens}</span>
+            <span class="font-mono text-gray-400">{stats.input_tokens}</span>
           </div>
           <div class="flex justify-between">
             <span>Output tokens:</span>
-            <span class="font-mono">{stats.output_tokens}</span>
+            <span class="font-mono text-gray-400">{stats.output_tokens}</span>
           </div>
         </div>
       {/if}
@@ -517,8 +517,8 @@
           <div class="w-full max-w-lg">
             {#if activeServer?.status !== 'connected'}
               <div class="text-center mb-6">
-                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 mb-4 mx-auto">
-                  <Terminal class="h-8 w-8 text-purple-400" />
+                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600/10 border border-primary-500/20 mb-4 mx-auto">
+                  <Terminal class="h-8 w-8 text-primary-400" />
                 </div>
                 <h2 class="text-xl font-semibold text-gray-200 mb-2">llama-agent</h2>
                 <p class="text-gray-500">Connect to a server to start chatting with the agent.</p>
@@ -534,16 +534,16 @@
               <div class="mt-6">
                 <p class="text-xs text-gray-500 text-center mb-3">Quick prompts</p>
                 <div class="grid grid-cols-2 gap-2 text-sm">
-                  <button onclick={() => { showDashboard = false; handleSend('List files in the current directory'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                  <button onclick={() => { showDashboard = false; handleSend('List files in the current directory'); }} class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3">
                     <span class="text-gray-400">List files</span>
                   </button>
-                  <button onclick={() => { showDashboard = false; handleSend('What tools do you have available?'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                  <button onclick={() => { showDashboard = false; handleSend('What tools do you have available?'); }} class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3">
                     <span class="text-gray-400">List tools</span>
                   </button>
-                  <button onclick={() => { showDashboard = false; handleSend('Find all TODO comments in this project'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                  <button onclick={() => { showDashboard = false; handleSend('Find all TODO comments in this project'); }} class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3">
                     <span class="text-gray-400">Find TODOs</span>
                   </button>
-                  <button onclick={() => { showDashboard = false; handleSend('Explain the project structure'); }} class="card hover:bg-gray-800/50 transition-colors text-left p-3">
+                  <button onclick={() => { showDashboard = false; handleSend('Explain the project structure'); }} class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3">
                     <span class="text-gray-400">Project structure</span>
                   </button>
                 </div>
