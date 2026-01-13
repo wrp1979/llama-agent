@@ -1,4 +1,7 @@
 services:
+  # ============================================================================
+  # llama-agent-server - API backend
+  # ============================================================================
   llama:
     build:
       context: .
@@ -17,7 +20,6 @@ services:
               count: 1
               capabilities: [gpu]
     ports:
-      - "8080:8080"
       - "8081:8081"
     volumes:
       - ~/src:/src:ro
@@ -26,7 +28,7 @@ services:
       - ./download-monitor.py:/app/download-monitor.py:ro
     environment:
       - LLAMA_ARG_HOST=0.0.0.0
-      - LLAMA_ARG_PORT=8080
+      - LLAMA_ARG_PORT=8081
       - LLAMA_ARG_N_GPU_LAYERS=20
       - CUDA_VISIBLE_DEVICES=0
       - HF_HUB_ENABLE_HF_TRANSFER=1
@@ -35,8 +37,44 @@ services:
     tty: true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 600s
+
+  # ============================================================================
+  # llama-agent-ui - Web interface (development with hot-reload)
+  # ============================================================================
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      target: dev
+    container_name: llama-agent-ui
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - llama
+    restart: unless-stopped
+
+  # ============================================================================
+  # llama-agent-ui-prod - Production web interface (nginx)
+  # Uncomment to use production mode instead of dev
+  # ============================================================================
+  # ui-prod:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: Dockerfile
+  #     target: prod
+  #   container_name: llama-agent-ui-prod
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - llama
+  #   restart: unless-stopped
