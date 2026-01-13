@@ -105,6 +105,15 @@ if [ -f "${MODEL_PATH}" ]; then
     echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
+    # Start system status updater in background (writes to /config/system-status.json)
+    (
+        while true; do
+            MODEL_PATH="${MODEL_PATH}" MODELS_DIR="${MODEL_DIR}" /app/update-status.sh >/dev/null 2>&1
+            sleep 5
+        done
+    ) &
+    echo -e "${GREEN}✓ System status updater started${NC}"
+
     # Start llama-agent-server with model AND API key
     exec ./llama-agent-server \
         -m "${MODEL_PATH}" \

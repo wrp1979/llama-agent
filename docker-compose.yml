@@ -22,12 +22,14 @@ services:
     ports:
       # SECURITY: Only bind to localhost - API requires authentication
       - "127.0.0.1:8081:8081"
+      - "127.0.0.1:8082:8082"  # System status server
     volumes:
       - ~/src:/src:ro
       - ./models:/models
       - ./config:/config
       - ./entrypoint.sh:/app/entrypoint.sh:ro
       - ./download-monitor.py:/app/download-monitor.py:ro
+      - ./update-status.sh:/app/update-status.sh:ro
     environment:
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=8081
