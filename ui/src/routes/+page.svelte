@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Bot, Plus, Trash2, Terminal, Zap, LayoutDashboard } from 'lucide-svelte';
+  import { Bot, Plus, Trash2, Terminal, Zap, LayoutDashboard, Store } from 'lucide-svelte';
   import ChatMessage from '$lib/components/ChatMessage.svelte';
   import ChatInput from '$lib/components/ChatInput.svelte';
   import PermissionDialog from '$lib/components/PermissionDialog.svelte';
   import ServerSelector from '$lib/components/ServerSelector.svelte';
   import ServerDialog from '$lib/components/ServerDialog.svelte';
   import SystemStatus from '$lib/components/SystemStatus.svelte';
+  import ModelMarketplace from '$lib/components/ModelMarketplace.svelte';
   import { serversStore } from '$lib/stores/servers.svelte';
   import { sessionsStore, type DbSession } from '$lib/stores/sessions.svelte';
   import {
@@ -34,6 +35,9 @@
 
   // Dashboard view state
   let showDashboard = $state(false);
+
+  // Marketplace state
+  let showMarketplace = $state(false);
 
   // Derived state
   let activeServer = $derived(serversStore.activeServer);
@@ -428,6 +432,13 @@
         <LayoutDashboard class="h-4 w-4" />
         Dashboard
       </button>
+      <button
+        onclick={() => showMarketplace = true}
+        class="btn w-full gap-2 bg-gray-800 text-gray-300 hover:bg-gray-700"
+      >
+        <Store class="h-4 w-4" />
+        Get Models
+      </button>
     </div>
 
     <!-- Sessions list -->
@@ -569,4 +580,9 @@
     onDelete={handleDeleteServer}
     onClose={() => (showServerDialog = false)}
   />
+{/if}
+
+<!-- Model Marketplace -->
+{#if showMarketplace}
+  <ModelMarketplace onClose={() => showMarketplace = false} />
 {/if}
