@@ -27,14 +27,20 @@ export {};
 
 declare module "$app/types" {
 	export interface AppTypes {
-		RouteId(): "/";
+		RouteId(): "/" | "/api" | "/api/config" | "/api/db" | "/api/db/messages" | "/api/db/servers" | "/api/db/sessions";
 		RouteParams(): {
 			
 		};
 		LayoutParams(): {
-			"/": Record<string, never>
+			"/": Record<string, never>;
+			"/api": Record<string, never>;
+			"/api/config": Record<string, never>;
+			"/api/db": Record<string, never>;
+			"/api/db/messages": Record<string, never>;
+			"/api/db/servers": Record<string, never>;
+			"/api/db/sessions": Record<string, never>
 		};
-		Pathname(): "/";
+		Pathname(): "/" | "/api" | "/api/" | "/api/config" | "/api/config/" | "/api/db" | "/api/db/" | "/api/db/messages" | "/api/db/messages/" | "/api/db/servers" | "/api/db/servers/" | "/api/db/sessions" | "/api/db/sessions/";
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
 		Asset(): "/favicon.png" | string & {};
 	}

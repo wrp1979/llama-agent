@@ -1,23 +1,38 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Bot, Plus, Settings, Trash2, Terminal, Zap } from 'lucide-svelte';
+  import { Bot, Plus, Trash2, Terminal, Zap } from 'lucide-svelte';
   import ChatMessage from '$lib/components/ChatMessage.svelte';
   import ChatInput from '$lib/components/ChatInput.svelte';
   import PermissionDialog from '$lib/components/PermissionDialog.svelte';
-  import { createSession, sendMessage, listSessions, deleteSession } from '$lib/api';
-  import type { Message, Session, PermissionRequest, AgentStats } from '$lib/types';
+  import ServerSelector from '$lib/components/ServerSelector.svelte';
+  import ServerDialog from '$lib/components/ServerDialog.svelte';
+  import { serversStore } from '$lib/stores/servers.svelte';
+  import { sessionsStore, type DbSession } from '$lib/stores/sessions.svelte';
+  import {
+    createSession as createRemoteSession,
+    sendMessage,
+    checkServerHealth,
+  } from '$lib/api';
+  import type { Message, PermissionRequest, AgentStats, AgentServer } from '$lib/types';
 
   // State
-  let sessions = $state<Session[]>([]);
-  let currentSessionId = $state<string | null>(null);
+  let dbSessions = $state<DbSession[]>([]);
+  let currentDbSession = $state<DbSession | null>(null);
   let messages = $state<Message[]>([]);
   let isLoading = $state(false);
-  let isConnected = $state(false);
   let pendingPermission = $state<PermissionRequest | null>(null);
   let yoloMode = $state(true);
   let stats = $state<AgentStats | null>(null);
   let cancelStream: (() => void) | null = null;
   let messagesContainer: HTMLDivElement;
+
+  // Server dialog state
+  let showServerDialog = $state(false);
+  let editingServer = $state<AgentServer | null>(null);
+  let isNewServer = $state(false);
+
+  // Derived state
+  let activeServer = $derived(serversStore.activeServer);
 
   // Auto-scroll to bottom
   function scrollToBottom() {
@@ -26,15 +41,68 @@
     }
   }
 
+  // Check health of active server
+  async function checkActiveServerHealth() {
+    if (!activeServer) return;
+
+    serversStore.setStatus(activeServer.id, 'connecting');
+    const isHealthy = await checkServerHealth(activeServer);
+    serversStore.setStatus(activeServer.id, isHealthy ? 'connected' : 'disconnected');
+  }
+
+  // Load sessions from database for active server
+  async function loadSessions() {
+    if (!activeServer) {
+      dbSessions = [];
+      return;
+    }
+
+    try {
+      dbSessions = await sessionsStore.listSessions(activeServer.id);
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+      dbSessions = [];
+    }
+  }
+
+  // Load messages for current session from database
+  async function loadMessages() {
+    if (!currentDbSession) {
+      messages = [];
+      return;
+    }
+
+    try {
+      messages = await sessionsStore.getMessages(currentDbSession.id);
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      messages = [];
+    }
+  }
+
   // Create new session
   async function handleNewSession() {
+    if (!activeServer || activeServer.status !== 'connected') return;
+
     try {
       isLoading = true;
-      const session = await createSession({ yolo: yoloMode });
-      sessions = [session, ...sessions];
-      currentSessionId = session.session_id;
-      messages = [];
-      stats = null;
+
+      // Create session on remote server
+      const remoteSession = await createRemoteSession(activeServer, { yolo: yoloMode });
+
+      // Save session to database
+      const dbSession = await sessionsStore.createSession(
+        activeServer.id,
+        remoteSession.session_id,
+        yoloMode
+      );
+
+      if (dbSession) {
+        dbSessions = [dbSession, ...dbSessions];
+        currentDbSession = dbSession;
+        messages = [];
+        stats = null;
+      }
     } catch (error) {
       console.error('Failed to create session:', error);
       addSystemMessage(`Error: ${error instanceof Error ? error.message : 'Failed to create session'}`);
@@ -44,40 +112,65 @@
   }
 
   // Delete session
-  async function handleDeleteSession(sessionId: string) {
+  async function handleDeleteSession(session: DbSession) {
+    if (!activeServer) return;
+
     try {
-      await deleteSession(sessionId);
-      sessions = sessions.filter((s) => s.session_id !== sessionId);
-      if (currentSessionId === sessionId) {
-        currentSessionId = sessions[0]?.session_id || null;
-        messages = [];
+      // Delete from database (cascades to messages)
+      await sessionsStore.deleteSession(session.id);
+
+      dbSessions = dbSessions.filter((s) => s.id !== session.id);
+
+      if (currentDbSession?.id === session.id) {
+        currentDbSession = dbSessions[0] || null;
+        if (currentDbSession) {
+          await loadMessages();
+        } else {
+          messages = [];
+        }
       }
     } catch (error) {
       console.error('Failed to delete session:', error);
     }
   }
 
+  // Select session
+  async function handleSelectSession(session: DbSession) {
+    currentDbSession = session;
+    await loadMessages();
+    scrollToBottom();
+  }
+
   // Add system message
   function addSystemMessage(content: string) {
-    messages = [
-      ...messages,
-      {
-        id: crypto.randomUUID(),
-        role: 'system',
-        content,
-        timestamp: new Date(),
-      },
-    ];
+    const msg: Message = {
+      id: crypto.randomUUID(),
+      role: 'system',
+      content,
+      timestamp: new Date(),
+    };
+    messages = [...messages, msg];
+
+    // Save to database
+    if (currentDbSession) {
+      sessionsStore.saveMessage(currentDbSession.id, msg);
+    }
+
     scrollToBottom();
   }
 
   // Send message
   async function handleSend(content: string) {
-    if (!currentSessionId) {
+    if (!activeServer || activeServer.status !== 'connected') {
+      addSystemMessage('Not connected to server');
+      return;
+    }
+
+    if (!currentDbSession) {
       await handleNewSession();
     }
 
-    if (!currentSessionId) return;
+    if (!currentDbSession?.externalId) return;
 
     // Add user message
     const userMessage: Message = {
@@ -89,20 +182,23 @@
     messages = [...messages, userMessage];
     scrollToBottom();
 
+    // Save user message to database
+    sessionsStore.saveMessage(currentDbSession.id, userMessage);
+
     // Start streaming
     isLoading = true;
     let assistantMessage: Message | null = null;
     let currentToolMessage: Message | null = null;
 
     cancelStream = sendMessage(
-      currentSessionId,
+      activeServer,
+      currentDbSession.externalId,
       content,
       (event, data) => {
         const eventData = data as Record<string, unknown>;
 
         switch (event) {
           case 'iteration_start':
-            // New iteration
             break;
 
           case 'reasoning_delta':
@@ -123,10 +219,11 @@
             break;
 
           case 'tool_start':
-            // Finalize previous assistant message if any
-            if (assistantMessage) {
+            // Save assistant message if exists
+            if (assistantMessage && currentDbSession) {
               assistantMessage.isStreaming = false;
               messages = [...messages.slice(0, -1), { ...assistantMessage }];
+              sessionsStore.saveMessage(currentDbSession.id, assistantMessage);
               assistantMessage = null;
             }
 
@@ -143,11 +240,13 @@
             break;
 
           case 'tool_result':
-            if (currentToolMessage) {
+            if (currentToolMessage && currentDbSession) {
               currentToolMessage.content = (eventData.output as string) || '';
               currentToolMessage.toolSuccess = eventData.success as boolean;
               currentToolMessage.isStreaming = false;
               messages = [...messages.slice(0, -1), { ...currentToolMessage }];
+              // Save tool message to database
+              sessionsStore.saveMessage(currentDbSession.id, currentToolMessage);
               currentToolMessage = null;
             }
             scrollToBottom();
@@ -162,9 +261,14 @@
             break;
 
           case 'completed':
-            if (assistantMessage) {
+            if (assistantMessage && currentDbSession) {
               assistantMessage.isStreaming = false;
               messages = [...messages.slice(0, -1), { ...assistantMessage }];
+              // Save final assistant message to database
+              sessionsStore.saveMessage(currentDbSession.id, assistantMessage, {
+                inputTokens: (eventData.stats as AgentStats)?.input_tokens,
+                outputTokens: (eventData.stats as AgentStats)?.output_tokens,
+              });
             }
             stats = (eventData.stats as AgentStats) || null;
             break;
@@ -185,36 +289,57 @@
     );
   }
 
-  // Cancel current stream
-  function handleCancel() {
-    if (cancelStream) {
-      cancelStream();
-      cancelStream = null;
-      isLoading = false;
+  // Server selection
+  function handleServerSelect(id: string) {
+    serversStore.setActive(id);
+    dbSessions = [];
+    currentDbSession = null;
+    messages = [];
+    stats = null;
+  }
+
+  // Server dialog handlers
+  function handleAddServer() {
+    editingServer = null;
+    isNewServer = true;
+    showServerDialog = true;
+  }
+
+  function handleEditServer(server: AgentServer) {
+    editingServer = server;
+    isNewServer = false;
+    showServerDialog = true;
+  }
+
+  async function handleSaveServer(serverData: Omit<AgentServer, 'id' | 'status'>) {
+    if (isNewServer) {
+      const newServer = await serversStore.addServer(serverData);
+      serversStore.setActive(newServer.id);
+    } else if (editingServer) {
+      await serversStore.updateServer(editingServer.id, serverData);
     }
   }
 
-  // Check health
-  async function checkHealth() {
-    try {
-      const response = await fetch('/health');
-      isConnected = response.ok;
-    } catch {
-      isConnected = false;
-    }
+  function handleDeleteServer(id: string) {
+    serversStore.removeServer(id);
+  }
+
+  // Permission resolved handler
+  async function handlePermissionResolved() {
+    pendingPermission = null;
   }
 
   // Initialize
   onMount(() => {
-    checkHealth();
-    const healthInterval = setInterval(checkHealth, 5000);
+    // Init servers store
+    serversStore.init().then(() => {
+      // Start health check loop
+      checkActiveServerHealth();
+    });
 
-    // Load sessions
-    listSessions()
-      .then((s) => {
-        sessions = s;
-      })
-      .catch(console.error);
+    const healthInterval = setInterval(() => {
+      checkActiveServerHealth();
+    }, 5000);
 
     return () => {
       clearInterval(healthInterval);
@@ -222,10 +347,12 @@
     };
   });
 
-  // Permission resolved handler
-  function handlePermissionResolved() {
-    pendingPermission = null;
-  }
+  // Reload sessions when active server changes or connects
+  $effect(() => {
+    if (activeServer?.status === 'connected') {
+      loadSessions();
+    }
+  });
 </script>
 
 <div class="flex h-full">
@@ -239,15 +366,32 @@
         <div>
           <h1 class="font-semibold text-gray-100">llama-agent</h1>
           <div class="flex items-center gap-1.5">
-            <div class="h-2 w-2 rounded-full {isConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
-            <span class="text-xs text-gray-500">{isConnected ? 'Connected' : 'Disconnected'}</span>
+            <div class="h-2 w-2 rounded-full {activeServer?.status === 'connected' ? 'bg-green-500' : activeServer?.status === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}"></div>
+            <span class="text-xs text-gray-500">
+              {activeServer?.status === 'connected' ? 'Connected' : activeServer?.status === 'connecting' ? 'Connecting...' : 'Disconnected'}
+            </span>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Server Selector -->
+    <div class="p-3 border-b border-gray-800">
+      <ServerSelector
+        servers={serversStore.servers}
+        {activeServer}
+        onSelect={handleServerSelect}
+        onAddServer={handleAddServer}
+        onEditServer={handleEditServer}
+      />
+    </div>
+
     <div class="p-3">
-      <button onclick={handleNewSession} disabled={isLoading} class="btn btn-primary w-full gap-2">
+      <button
+        onclick={handleNewSession}
+        disabled={isLoading || activeServer?.status !== 'connected'}
+        class="btn btn-primary w-full gap-2"
+      >
         <Plus class="h-4 w-4" />
         New Session
       </button>
@@ -255,27 +399,28 @@
 
     <!-- Sessions list -->
     <div class="flex-1 overflow-y-auto p-2 space-y-1">
-      {#each sessions as session}
+      {#each dbSessions as session}
         <div
           role="button"
           tabindex="0"
-          onclick={() => {
-            currentSessionId = session.session_id;
-            messages = [];
-          }}
+          onclick={() => handleSelectSession(session)}
           onkeydown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
-              currentSessionId = session.session_id;
-              messages = [];
+              handleSelectSession(session);
             }
           }}
-          class="group w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer {currentSessionId === session.session_id ? 'bg-gray-800 text-gray-100' : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'}"
+          class="group w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer {currentDbSession?.id === session.id ? 'bg-gray-800 text-gray-100' : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'}"
         >
-          <span class="truncate font-mono text-xs">{session.session_id}</span>
+          <div class="truncate">
+            <span class="font-mono text-xs">{session.externalId || session.id.slice(0, 16)}</span>
+            {#if session.name}
+              <span class="block text-[10px] text-gray-500 truncate">{session.name}</span>
+            {/if}
+          </div>
           <button
             onclick={(e) => {
               e.stopPropagation();
-              handleDeleteSession(session.session_id);
+              handleDeleteSession(session);
             }}
             class="opacity-0 group-hover:opacity-100 hover:text-red-400"
           >
@@ -325,22 +470,28 @@
           </div>
           <h2 class="text-xl font-semibold text-gray-200 mb-2">llama-agent</h2>
           <p class="text-gray-500 max-w-md">
-            A coding agent that runs entirely inside llama.cpp. Ask me to explore code, run commands, edit files, and more.
+            {#if activeServer?.status !== 'connected'}
+              Connect to a server to start chatting with the agent.
+            {:else}
+              A coding agent that runs entirely inside llama.cpp. Ask me to explore code, run commands, edit files, and more.
+            {/if}
           </p>
-          <div class="mt-6 grid grid-cols-2 gap-3 text-sm">
-            <button onclick={() => handleSend('List files in the current directory')} class="card hover:bg-gray-800/50 transition-colors text-left">
-              <span class="text-gray-400">List files in the current directory</span>
-            </button>
-            <button onclick={() => handleSend('What tools do you have available?')} class="card hover:bg-gray-800/50 transition-colors text-left">
-              <span class="text-gray-400">What tools do you have available?</span>
-            </button>
-            <button onclick={() => handleSend('Find all TODO comments in this project')} class="card hover:bg-gray-800/50 transition-colors text-left">
-              <span class="text-gray-400">Find all TODO comments</span>
-            </button>
-            <button onclick={() => handleSend('Explain the project structure')} class="card hover:bg-gray-800/50 transition-colors text-left">
-              <span class="text-gray-400">Explain the project structure</span>
-            </button>
-          </div>
+          {#if activeServer?.status === 'connected'}
+            <div class="mt-6 grid grid-cols-2 gap-3 text-sm">
+              <button onclick={() => handleSend('List files in the current directory')} class="card hover:bg-gray-800/50 transition-colors text-left">
+                <span class="text-gray-400">List files in the current directory</span>
+              </button>
+              <button onclick={() => handleSend('What tools do you have available?')} class="card hover:bg-gray-800/50 transition-colors text-left">
+                <span class="text-gray-400">What tools do you have available?</span>
+              </button>
+              <button onclick={() => handleSend('Find all TODO comments in this project')} class="card hover:bg-gray-800/50 transition-colors text-left">
+                <span class="text-gray-400">Find all TODO comments</span>
+              </button>
+              <button onclick={() => handleSend('Explain the project structure')} class="card hover:bg-gray-800/50 transition-colors text-left">
+                <span class="text-gray-400">Explain the project structure</span>
+              </button>
+            </div>
+          {/if}
         </div>
       {:else}
         {#each messages as message (message.id)}
@@ -350,11 +501,25 @@
     </div>
 
     <!-- Input -->
-    <ChatInput onSend={handleSend} disabled={isLoading} />
+    <ChatInput onSend={handleSend} disabled={isLoading || activeServer?.status !== 'connected'} />
   </main>
 </div>
 
 <!-- Permission dialog -->
-{#if pendingPermission}
-  <PermissionDialog permission={pendingPermission} onResolved={handlePermissionResolved} />
+{#if pendingPermission && activeServer}
+  <PermissionDialog
+    permission={pendingPermission}
+    onResolved={handlePermissionResolved}
+  />
+{/if}
+
+<!-- Server dialog -->
+{#if showServerDialog}
+  <ServerDialog
+    server={editingServer}
+    isNew={isNewServer}
+    onSave={handleSaveServer}
+    onDelete={handleDeleteServer}
+    onClose={() => (showServerDialog = false)}
+  />
 {/if}

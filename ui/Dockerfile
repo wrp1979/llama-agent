@@ -5,6 +5,9 @@ FROM node:22-alpine AS dev
 
 WORKDIR /app
 
+# Install build tools for native dependencies (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Install dependencies first (cached layer)
 COPY package.json ./
 RUN npm install

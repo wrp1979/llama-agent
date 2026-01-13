@@ -1,3 +1,15 @@
 {
-	"/": []
+	"/": [],
+	"/api/config": [
+		"src/routes/api/config/+server.ts"
+	],
+	"/api/db/messages": [
+		"src/routes/api/db/messages/+server.ts"
+	],
+	"/api/db/servers": [
+		"src/routes/api/db/servers/+server.ts"
+	],
+	"/api/db/sessions": [
+		"src/routes/api/db/sessions/+server.ts"
+	]
 }

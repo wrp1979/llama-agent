@@ -41,6 +41,7 @@ declare module '$env/static/private' {
 	export const npm_config_prefix: string;
 	export const npm_config_npm_version: string;
 	export const npm_config_cache: string;
+	export const DB_PATH: string;
 	export const npm_config_node_gyp: string;
 	export const PATH: string;
 	export const NODE: string;
@@ -101,6 +102,7 @@ declare module '$env/dynamic/private' {
 		npm_config_prefix: string;
 		npm_config_npm_version: string;
 		npm_config_cache: string;
+		DB_PATH: string;
 		npm_config_node_gyp: string;
 		PATH: string;
 		NODE: string;

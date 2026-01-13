@@ -1,78 +1,121 @@
-import type { Session, PermissionRequest } from './types';
+import type { Session, PermissionRequest, AgentServer } from './types';
 
-const API_BASE = '/v1/agent';
+function getHeaders(server: AgentServer): HeadersInit {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (server.apiKey) {
+    headers['Authorization'] = `Bearer ${server.apiKey}`;
+  }
+  return headers;
+}
 
-export async function createSession(options: { yolo?: boolean; working_dir?: string } = {}): Promise<Session> {
-  const response = await fetch(`${API_BASE}/session`, {
+export async function checkServerHealth(server: AgentServer): Promise<boolean> {
+  try {
+    const response = await fetch(`${server.url}/health`, {
+      headers: server.apiKey ? { 'Authorization': `Bearer ${server.apiKey}` } : {},
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function createSession(
+  server: AgentServer,
+  options: { yolo?: boolean; working_dir?: string } = {}
+): Promise<Session> {
+  const response = await fetch(`${server.url}/v1/agent/session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders(server),
     body: JSON.stringify(options),
   });
-  if (!response.ok) throw new Error(`Failed to create session: ${response.statusText}`);
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create session: ${response.status} ${error}`);
+  }
   return response.json();
 }
 
-export async function getSession(sessionId: string): Promise<Session> {
-  const response = await fetch(`${API_BASE}/session/${sessionId}`);
+export async function getSession(server: AgentServer, sessionId: string): Promise<Session> {
+  const response = await fetch(`${server.url}/v1/agent/session/${sessionId}`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to get session: ${response.statusText}`);
   return response.json();
 }
 
-export async function listSessions(): Promise<Session[]> {
-  const response = await fetch(`${API_BASE}/sessions`);
+export async function listSessions(server: AgentServer): Promise<Session[]> {
+  const response = await fetch(`${server.url}/v1/agent/sessions`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to list sessions: ${response.statusText}`);
   const data = await response.json();
   return data.sessions || [];
 }
 
-export async function deleteSession(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/session/${sessionId}/delete`, {
+export async function deleteSession(server: AgentServer, sessionId: string): Promise<void> {
+  const response = await fetch(`${server.url}/v1/agent/session/${sessionId}/delete`, {
     method: 'POST',
+    headers: getHeaders(server),
   });
   if (!response.ok) throw new Error(`Failed to delete session: ${response.statusText}`);
 }
 
-export async function getMessages(sessionId: string): Promise<unknown[]> {
-  const response = await fetch(`${API_BASE}/session/${sessionId}/messages`);
+export async function getMessages(server: AgentServer, sessionId: string): Promise<unknown[]> {
+  const response = await fetch(`${server.url}/v1/agent/session/${sessionId}/messages`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to get messages: ${response.statusText}`);
   const data = await response.json();
   return data.messages || [];
 }
 
-export async function getPendingPermissions(sessionId: string): Promise<PermissionRequest[]> {
-  const response = await fetch(`${API_BASE}/session/${sessionId}/permissions`);
+export async function getPendingPermissions(
+  server: AgentServer,
+  sessionId: string
+): Promise<PermissionRequest[]> {
+  const response = await fetch(`${server.url}/v1/agent/session/${sessionId}/permissions`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to get permissions: ${response.statusText}`);
   const data = await response.json();
   return data.pending || [];
 }
 
 export async function respondToPermission(
+  server: AgentServer,
   requestId: string,
   allow: boolean,
   scope: 'once' | 'session' | 'always' = 'once'
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}/permission/${requestId}`, {
+  const response = await fetch(`${server.url}/v1/agent/permission/${requestId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders(server),
     body: JSON.stringify({ allow, scope }),
   });
   if (!response.ok) throw new Error(`Failed to respond to permission: ${response.statusText}`);
 }
 
-export async function listTools(): Promise<unknown[]> {
-  const response = await fetch(`${API_BASE}/tools`);
+export async function listTools(server: AgentServer): Promise<unknown[]> {
+  const response = await fetch(`${server.url}/v1/agent/tools`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to list tools: ${response.statusText}`);
   const data = await response.json();
   return data.tools || [];
 }
 
-export async function getSessionStats(sessionId: string): Promise<unknown> {
-  const response = await fetch(`${API_BASE}/session/${sessionId}/stats`);
+export async function getSessionStats(server: AgentServer, sessionId: string): Promise<unknown> {
+  const response = await fetch(`${server.url}/v1/agent/session/${sessionId}/stats`, {
+    headers: getHeaders(server),
+  });
   if (!response.ok) throw new Error(`Failed to get stats: ${response.statusText}`);
   return response.json();
 }
 
 export function sendMessage(
+  server: AgentServer,
   sessionId: string,
   content: string,
   onEvent: (event: string, data: unknown) => void,
@@ -81,15 +124,16 @@ export function sendMessage(
 ): () => void {
   const controller = new AbortController();
 
-  fetch(`${API_BASE}/session/${sessionId}/chat`, {
+  fetch(`${server.url}/v1/agent/session/${sessionId}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders(server),
     body: JSON.stringify({ content }),
     signal: controller.signal,
   })
     .then(async (response) => {
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const reader = response.body?.getReader();
