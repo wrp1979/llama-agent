@@ -114,14 +114,12 @@ if [ -f "${MODEL_PATH}" ]; then
     ) &
     echo -e "${GREEN}✓ System status updater started${NC}"
 
-    # Start llama-agent-server with model AND API key
-    exec ./llama-agent-server \
-        -m "${MODEL_PATH}" \
-        --host "${SERVER_HOST}" \
-        --port "${SERVER_PORT}" \
-        --api-key "${API_KEY}" \
-        -ngl "${LLAMA_ARG_N_GPU_LAYERS:-999}" \
-        "$@"
+    # Start model manager (handles model switching)
+    export MODELS_DIR="${MODEL_DIR}"
+    export LLAMA_ARG_HOST="${SERVER_HOST}"
+    export LLAMA_ARG_PORT="${SERVER_PORT}"
+    export LLAMA_ARG_N_GPU_LAYERS="${LLAMA_ARG_N_GPU_LAYERS:-999}"
+    exec /app/model-manager.sh "${MODEL_NAME}"
 else
     echo -e "${YELLOW}⚠ Model not found locally${NC}"
     echo ""
