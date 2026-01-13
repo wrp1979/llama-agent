@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { getHardwareInfo, analyzeCompatibility, type ModelCompatibility } from '$lib/server/hardware';
 
 const HF_API_BASE = 'https://huggingface.co/api';
 
@@ -8,6 +9,7 @@ export interface ModelFile {
   size: number;
   sizeFormatted: string;
   quantization: string;
+  compatibility: ModelCompatibility;
 }
 
 export interface ModelDetails {
@@ -46,6 +48,9 @@ export const GET: RequestHandler = async ({ params }) => {
 
     let files: ModelFile[] = [];
 
+    // Get hardware info for compatibility analysis
+    const hardware = getHardwareInfo();
+
     if (treeResponse.ok) {
       const treeData = await treeResponse.json();
 
@@ -64,10 +69,16 @@ export const GET: RequestHandler = async ({ params }) => {
             size,
             sizeFormatted: formatSize(size),
             quantization: extractQuantization(path),
+            compatibility: analyzeCompatibility(size, hardware),
           };
         })
         .sort((a: ModelFile, b: ModelFile) => {
-          // Sort by quantization quality (higher quality first)
+          // Sort by compatibility first, then by quantization quality
+          const compatOrder = { excellent: 0, good: 1, warning: 2, poor: 3 };
+          const compatDiff = compatOrder[a.compatibility.status] - compatOrder[b.compatibility.status];
+          if (compatDiff !== 0) return compatDiff;
+
+          // Within same compatibility, sort by quantization quality (higher quality first)
           const order = ['F32', 'F16', 'BF16', 'Q8_0', 'Q6_K', 'Q5_K_M', 'Q5_K_S', 'Q5_0', 'Q4_K_M', 'Q4_K_S', 'Q4_0', 'Q3_K_M', 'Q3_K_S', 'Q2_K', 'IQ4', 'IQ3', 'IQ2', 'IQ1'];
           const aIdx = order.findIndex(q => a.quantization.includes(q));
           const bIdx = order.findIndex(q => b.quantization.includes(q));

@@ -2,7 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import {
     Search, Download, X, ArrowLeft, Loader2, Package, HardDrive,
-    TrendingUp, Heart, Clock, ExternalLink, ChevronRight
+    TrendingUp, Heart, Clock, ExternalLink, ChevronRight,
+    CheckCircle, AlertTriangle, AlertCircle, XCircle, Cpu, Zap
   } from 'lucide-svelte';
 
   interface HFModel {
@@ -15,11 +16,23 @@
     lastModified: string;
   }
 
+  interface ModelCompatibility {
+    status: 'excellent' | 'good' | 'warning' | 'poor';
+    message: string;
+    canRun: boolean;
+    recommendedGpuLayers: number;
+    estimatedTotalLayers: number;
+    vramRequired: number;
+    ramRequired: number;
+    willFitInVram: boolean;
+  }
+
   interface ModelFile {
     name: string;
     size: number;
     sizeFormatted: string;
     quantization: string;
+    compatibility: ModelCompatibility;
   }
 
   interface ModelDetails {
@@ -58,6 +71,7 @@
   let isLoadingDetails = $state(false);
   let downloadStatus = $state<DownloadStatus | null>(null);
   let downloadInterval: ReturnType<typeof setInterval> | null = null;
+  let confirmDownload = $state<{ file: ModelFile; show: boolean } | null>(null);
   let error = $state<string | null>(null);
 
   // Popular authors for quick filters
@@ -107,6 +121,42 @@
       error = 'Connection error';
     } finally {
       isLoadingDetails = false;
+    }
+  }
+
+  function handleDownloadClick(file: ModelFile) {
+    // If compatibility is warning or poor, show confirmation dialog
+    if (file.compatibility.status === 'warning' || file.compatibility.status === 'poor') {
+      confirmDownload = { file, show: true };
+    } else {
+      startDownload(selectedModel!.id, file.name);
+    }
+  }
+
+  function confirmAndDownload() {
+    if (confirmDownload && selectedModel) {
+      startDownload(selectedModel.id, confirmDownload.file.name);
+      confirmDownload = null;
+    }
+  }
+
+  function getCompatibilityColor(status: ModelCompatibility['status']): string {
+    switch (status) {
+      case 'excellent': return 'text-green-400';
+      case 'good': return 'text-blue-400';
+      case 'warning': return 'text-yellow-400';
+      case 'poor': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  }
+
+  function getCompatibilityBg(status: ModelCompatibility['status']): string {
+    switch (status) {
+      case 'excellent': return 'bg-green-500/10 border-green-500/30';
+      case 'good': return 'bg-blue-500/10 border-blue-500/30';
+      case 'warning': return 'bg-yellow-500/10 border-yellow-500/30';
+      case 'poor': return 'bg-red-500/10 border-red-500/30';
+      default: return 'bg-gray-500/10 border-gray-500/30';
     }
   }
 
@@ -194,10 +244,10 @@
   });
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-  <div class="w-full max-w-4xl max-h-[90vh] bg-gray-900 rounded-xl border border-gray-700 shadow-2xl flex flex-col">
+<div class="modal-backdrop">
+  <div class="w-full max-w-4xl max-h-[90vh] bg-gray-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50 flex flex-col">
     <!-- Header -->
-    <div class="flex items-center justify-between p-4 border-b border-gray-700">
+    <div class="flex items-center justify-between p-4 border-b border-white/5">
       {#if selectedModel}
         <button
           onclick={() => selectedModel = null}
@@ -212,7 +262,7 @@
           <h2 class="text-lg font-semibold text-white">Model Marketplace</h2>
         </div>
       {/if}
-      <button onclick={onClose} class="p-2 text-gray-400 hover:text-white transition-colors">
+      <button onclick={onClose} class="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
         <X class="h-5 w-5" />
       </button>
     </div>
@@ -298,24 +348,43 @@
 
           <div class="space-y-2">
             {#each selectedModel.files as file}
-              <div class="flex items-center justify-between p-3 rounded-lg bg-gray-800/50 hover:bg-gray-800 transition-colors">
-                <div class="flex items-center gap-3">
-                  <HardDrive class="h-5 w-5 text-gray-500" />
-                  <div>
-                    <p class="text-sm text-gray-200">{file.quantization}</p>
-                    <p class="text-xs text-gray-500">{file.name}</p>
+              <div class="p-3 rounded-xl border transition-all {getCompatibilityBg(file.compatibility.status)}">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <!-- Compatibility Icon -->
+                    {#if file.compatibility.status === 'excellent'}
+                      <CheckCircle class="h-5 w-5 text-green-400" />
+                    {:else if file.compatibility.status === 'good'}
+                      <Cpu class="h-5 w-5 text-blue-400" />
+                    {:else if file.compatibility.status === 'warning'}
+                      <AlertTriangle class="h-5 w-5 text-yellow-400" />
+                    {:else}
+                      <XCircle class="h-5 w-5 text-red-400" />
+                    {/if}
+                    <div>
+                      <p class="text-sm text-gray-200">{file.quantization}</p>
+                      <p class="text-xs text-gray-500">{file.name}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-sm text-gray-400">{file.sizeFormatted}</span>
+                    <button
+                      onclick={() => handleDownloadClick(file)}
+                      disabled={downloadStatus?.status === 'downloading' || !file.compatibility.canRun}
+                      class="btn btn-primary py-1.5 text-xs disabled:opacity-50"
+                    >
+                      <Download class="h-4 w-4" />
+                      Download
+                    </button>
                   </div>
                 </div>
-                <div class="flex items-center gap-3">
-                  <span class="text-sm text-gray-400">{file.sizeFormatted}</span>
-                  <button
-                    onclick={() => startDownload(selectedModel!.id, file.name)}
-                    disabled={downloadStatus?.status === 'downloading'}
-                    class="flex items-center gap-1 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-sm rounded-lg transition-colors"
-                  >
-                    <Download class="h-4 w-4" />
-                    Download
-                  </button>
+                <!-- Compatibility Info -->
+                <div class="mt-2 flex items-center gap-4 text-xs {getCompatibilityColor(file.compatibility.status)}">
+                  <span class="flex items-center gap-1">
+                    <Zap class="h-3 w-3" />
+                    {file.compatibility.recommendedGpuLayers}/{file.compatibility.estimatedTotalLayers} GPU layers
+                  </span>
+                  <span>{file.compatibility.message}</span>
                 </div>
               </div>
             {/each}
@@ -323,7 +392,7 @@
         </div>
       {:else}
         <!-- Search View -->
-        <div class="p-4 border-b border-gray-800">
+        <div class="p-4 border-b border-white/5">
           <!-- Search Input -->
           <div class="flex gap-2 mb-4">
             <div class="flex-1 relative">
@@ -333,13 +402,13 @@
                 bind:value={searchQuery}
                 onkeydown={handleKeydown}
                 placeholder="Search GGUF models..."
-                class="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500"
+                class="input pl-10"
               />
             </div>
             <button
               onclick={handleSearch}
               disabled={isLoading}
-              class="px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+              class="btn btn-primary"
             >
               Search
             </button>
@@ -351,7 +420,7 @@
             {#each popularAuthors as author}
               <button
                 onclick={() => searchModels('', author.id)}
-                class="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md transition-colors"
+                class="px-2.5 py-1 text-xs bg-white/5 hover:bg-white/10 text-gray-300 rounded-md border border-white/5 transition-colors"
               >
                 {author.name}
               </button>
@@ -382,7 +451,7 @@
               {#each models as model}
                 <button
                   onclick={() => loadModelDetails(model.id)}
-                  class="w-full flex items-center justify-between p-3 rounded-lg bg-gray-800/50 hover:bg-gray-800 transition-colors text-left"
+                  class="w-full flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 transition-all text-left"
                 >
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-200 truncate">{model.name}</p>
@@ -408,3 +477,77 @@
     </div>
   </div>
 </div>
+
+<!-- Confirmation Dialog for Incompatible Models -->
+{#if confirmDownload?.show}
+  <div class="modal-backdrop" style="z-index: 60;">
+    <div class="w-full max-w-md bg-gray-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-6">
+      <div class="flex items-center gap-3 mb-4">
+        {#if confirmDownload.file.compatibility.status === 'warning'}
+          <div class="p-2 rounded-full bg-yellow-500/20">
+            <AlertTriangle class="h-6 w-6 text-yellow-400" />
+          </div>
+        {:else}
+          <div class="p-2 rounded-full bg-red-500/20">
+            <AlertCircle class="h-6 w-6 text-red-400" />
+          </div>
+        {/if}
+        <h3 class="text-lg font-semibold text-white">
+          {confirmDownload.file.compatibility.status === 'warning' ? 'Performance Warning' : 'Compatibility Issue'}
+        </h3>
+      </div>
+
+      <div class="mb-6">
+        <p class="text-gray-300 mb-3">
+          {confirmDownload.file.compatibility.message}
+        </p>
+
+        <div class="p-3 rounded-lg bg-white/5 space-y-2 text-sm">
+          <div class="flex justify-between">
+            <span class="text-gray-500">Model:</span>
+            <span class="text-gray-300">{confirmDownload.file.quantization}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">Size:</span>
+            <span class="text-gray-300">{confirmDownload.file.sizeFormatted}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-500">GPU Layers:</span>
+            <span class="text-gray-300">{confirmDownload.file.compatibility.recommendedGpuLayers} / {confirmDownload.file.compatibility.estimatedTotalLayers}</span>
+          </div>
+          {#if !confirmDownload.file.compatibility.willFitInVram}
+            <div class="flex justify-between">
+              <span class="text-gray-500">RAM Required:</span>
+              <span class="text-yellow-400">{(confirmDownload.file.compatibility.ramRequired / 1000).toFixed(1)} GB</span>
+            </div>
+          {/if}
+        </div>
+
+        {#if confirmDownload.file.compatibility.status === 'poor'}
+          <p class="mt-3 text-red-400 text-sm">
+            ⚠️ This model may fail to load or run extremely slowly. Consider a smaller quantization.
+          </p>
+        {:else}
+          <p class="mt-3 text-yellow-400 text-sm">
+            💡 The model will run but with reduced performance due to CPU offloading.
+          </p>
+        {/if}
+      </div>
+
+      <div class="flex gap-3">
+        <button
+          onclick={() => confirmDownload = null}
+          class="flex-1 btn bg-white/5 hover:bg-white/10 text-gray-300"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={confirmAndDownload}
+          class="flex-1 btn {confirmDownload.file.compatibility.status === 'poor' ? 'bg-red-600 hover:bg-red-500' : 'bg-yellow-600 hover:bg-yellow-500'} text-white"
+        >
+          Download Anyway
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
