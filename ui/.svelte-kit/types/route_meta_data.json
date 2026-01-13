@@ -17,5 +17,8 @@
 	],
 	"/api/system/status": [
 		"src/routes/api/system/status/+server.ts"
+	],
+	"/api/system/switch-model": [
+		"src/routes/api/system/switch-model/+server.ts"
 	]
 }
