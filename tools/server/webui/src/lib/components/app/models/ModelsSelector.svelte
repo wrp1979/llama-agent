@@ -174,19 +174,29 @@
 	let showModelDialog = $state(false);
 	let pollingInterval: ReturnType<typeof setInterval> | null = null;
 	let isWaitingForModel = $state(false);
-	let waitingDots = $state('');
+	let downloadStatus = $state<{
+		status: string;
+		model: string;
+		message: string;
+		progress: number;
+		downloaded: string;
+		total: string;
+		speed: string;
+		eta: string;
+	} | null>(null);
 
-	// Animate the waiting dots
-	$effect(() => {
-		if (isWaitingForModel) {
-			const dotsInterval = setInterval(() => {
-				waitingDots = waitingDots.length >= 3 ? '' : waitingDots + '.';
-			}, 500);
-			return () => clearInterval(dotsInterval);
-		} else {
-			waitingDots = '';
+	// Fetch download status from status server
+	async function fetchDownloadStatus() {
+		try {
+			const response = await fetch('http://localhost:8081/status');
+			if (response.ok) {
+				downloadStatus = await response.json();
+			}
+		} catch {
+			// Status server not available
+			downloadStatus = null;
 		}
-	});
+	}
 
 	// Start polling when no models are available
 	function startPolling() {
@@ -194,14 +204,21 @@
 		isWaitingForModel = true;
 		pollingInterval = setInterval(async () => {
 			try {
+				// Fetch download status
+				await fetchDownloadStatus();
+
+				// Check for models
 				await modelsStore.fetch(true);
 				if (modelsStore.models.length > 0) {
 					stopPolling();
 				}
-			} catch (e) {
+			} catch {
 				// Ignore errors during polling
 			}
-		}, 3000); // Poll every 3 seconds
+		}, 2000); // Poll every 2 seconds
+
+		// Initial fetch
+		fetchDownloadStatus();
 	}
 
 	function stopPolling() {
@@ -210,6 +227,7 @@
 			pollingInterval = null;
 		}
 		isWaitingForModel = false;
+		downloadStatus = null;
 	}
 
 	onMount(() => {
@@ -399,13 +417,40 @@
 			Loading models…
 		</div>
 	{:else if options.length === 0 && isRouter}
-		<div class="flex items-center gap-2 text-xs text-muted-foreground">
-			{#if isWaitingForModel}
-				<Download class="h-3.5 w-3.5 animate-pulse" />
-				<span>Downloading model{waitingDots}</span>
+		<div class="flex flex-col items-end gap-1 text-xs text-muted-foreground">
+			{#if downloadStatus?.status === 'downloading'}
+				<div class="flex items-center gap-2">
+					<Download class="h-3.5 w-3.5 animate-pulse" />
+					<span>Downloading: {downloadStatus.progress}%</span>
+				</div>
+				<div class="flex items-center gap-2 text-[10px] opacity-70">
+					<span>{downloadStatus.downloaded}/{downloadStatus.total}</span>
+					{#if downloadStatus.speed}
+						<span>@ {downloadStatus.speed}</span>
+					{/if}
+				</div>
+				<!-- Progress bar -->
+				<div class="h-1 w-32 overflow-hidden rounded-full bg-muted">
+					<div
+						class="h-full bg-primary transition-all duration-300"
+						style="width: {downloadStatus.progress}%"
+					></div>
+				</div>
+			{:else if downloadStatus?.status === 'ready'}
+				<div class="flex items-center gap-2">
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+					<span>Loading model...</span>
+				</div>
+			{:else if isWaitingForModel}
+				<div class="flex items-center gap-2">
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+					<span>Initializing...</span>
+				</div>
 			{:else}
-				<Loader2 class="h-3.5 w-3.5 animate-spin" />
-				<span>Initializing{waitingDots}</span>
+				<div class="flex items-center gap-2">
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+					<span>Initializing...</span>
+				</div>
 			{/if}
 		</div>
 	{:else}
