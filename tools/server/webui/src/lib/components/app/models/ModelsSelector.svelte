@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
-	import { ChevronDown, EyeOff, Loader2, MicOff, Package, Power } from '@lucide/svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { ChevronDown, Download, EyeOff, Loader2, MicOff, Package, Power } from '@lucide/svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as Popover from '$lib/components/ui/popover';
 	import { cn } from '$lib/components/ui/utils';
@@ -172,11 +172,68 @@
 
 	let isOpen = $state(false);
 	let showModelDialog = $state(false);
+	let pollingInterval: ReturnType<typeof setInterval> | null = null;
+	let isWaitingForModel = $state(false);
+	let waitingDots = $state('');
+
+	// Animate the waiting dots
+	$effect(() => {
+		if (isWaitingForModel) {
+			const dotsInterval = setInterval(() => {
+				waitingDots = waitingDots.length >= 3 ? '' : waitingDots + '.';
+			}, 500);
+			return () => clearInterval(dotsInterval);
+		} else {
+			waitingDots = '';
+		}
+	});
+
+	// Start polling when no models are available
+	function startPolling() {
+		if (pollingInterval) return;
+		isWaitingForModel = true;
+		pollingInterval = setInterval(async () => {
+			try {
+				await modelsStore.fetch(true);
+				if (modelsStore.models.length > 0) {
+					stopPolling();
+				}
+			} catch (e) {
+				// Ignore errors during polling
+			}
+		}, 3000); // Poll every 3 seconds
+	}
+
+	function stopPolling() {
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+			pollingInterval = null;
+		}
+		isWaitingForModel = false;
+	}
 
 	onMount(() => {
 		modelsStore.fetch().catch((error) => {
 			console.error('Unable to load models:', error);
 		});
+
+		// Start polling if no models after initial fetch
+		setTimeout(() => {
+			if (modelsStore.models.length === 0 && isRouter) {
+				startPolling();
+			}
+		}, 1000);
+	});
+
+	onDestroy(() => {
+		stopPolling();
+	});
+
+	// Stop polling when models become available
+	$effect(() => {
+		if (options.length > 0 && pollingInterval) {
+			stopPolling();
+		}
 	});
 
 	// Handle changes to the model selector pop-down or the model dialog, depending on if the server is in
@@ -342,7 +399,15 @@
 			Loading models…
 		</div>
 	{:else if options.length === 0 && isRouter}
-		<p class="text-xs text-muted-foreground">No models available.</p>
+		<div class="flex items-center gap-2 text-xs text-muted-foreground">
+			{#if isWaitingForModel}
+				<Download class="h-3.5 w-3.5 animate-pulse" />
+				<span>Downloading model{waitingDots}</span>
+			{:else}
+				<Loader2 class="h-3.5 w-3.5 animate-spin" />
+				<span>Initializing{waitingDots}</span>
+			{/if}
+		</div>
 	{:else}
 		{@const selectedOption = getDisplayOption()}
 
