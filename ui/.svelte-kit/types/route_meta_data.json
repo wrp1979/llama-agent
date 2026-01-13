@@ -15,6 +15,15 @@
 	"/api/db/sessions/generate-title": [
 		"src/routes/api/db/sessions/generate-title/+server.ts"
 	],
+	"/api/models/download": [
+		"src/routes/api/models/download/+server.ts"
+	],
+	"/api/models/search": [
+		"src/routes/api/models/search/+server.ts"
+	],
+	"/api/models/[id]": [
+		"src/routes/api/models/[id]/+server.ts"
+	],
 	"/api/system/status": [
 		"src/routes/api/system/status/+server.ts"
 	],
