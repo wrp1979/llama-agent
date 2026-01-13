@@ -1,0 +1,88 @@
+services:
+  llama-server:
+    build:
+      context: .
+      dockerfile: .devops/cuda-new.Dockerfile
+      target: server
+      args:
+        CUDA_DOCKER_ARCH: "89"  # RTX 4090 (Ada Lovelace)
+    image: llama-agent:cuda-server
+    container_name: llama-server
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/src:/src:ro
+      - ./models:/models
+    environment:
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_PORT=8080
+      - LLAMA_ARG_N_GPU_LAYERS=999
+      - CUDA_VISIBLE_DEVICES=0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  llama-cli:
+    build:
+      context: .
+      dockerfile: .devops/cuda-new.Dockerfile
+      target: light
+      args:
+        CUDA_DOCKER_ARCH: "89"
+    image: llama-agent:cuda-cli
+    container_name: llama-cli
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ~/src:/src:ro
+      - ./models:/models
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    profiles:
+      - cli
+    stdin_open: true
+    tty: true
+
+  llama-full:
+    build:
+      context: .
+      dockerfile: .devops/cuda-new.Dockerfile
+      target: full
+      args:
+        CUDA_DOCKER_ARCH: "89"
+    image: llama-agent:cuda-full
+    container_name: llama-full
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ~/src:/src:ro
+      - ./models:/models
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    profiles:
+      - full
+    stdin_open: true
+    tty: true
