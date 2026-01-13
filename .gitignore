@@ -133,8 +133,13 @@ poetry.toml
 /run-spec.sh
 /.ccache/
 
+# Agent config (API keys)
+/config/
+
 # IDE
 /*.code-workspace
 /.windsurf/
 # emscripten
 a.out.*
+data/
+ui/node_modules/
