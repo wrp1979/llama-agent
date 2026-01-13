@@ -27,7 +27,7 @@ export {};
 
 declare module "$app/types" {
 	export interface AppTypes {
-		RouteId(): "/" | "/api" | "/api/config" | "/api/db" | "/api/db/messages" | "/api/db/servers" | "/api/db/sessions" | "/api/db/sessions/generate-title";
+		RouteId(): "/" | "/api" | "/api/config" | "/api/db" | "/api/db/messages" | "/api/db/servers" | "/api/db/sessions" | "/api/db/sessions/generate-title" | "/api/system" | "/api/system/status";
 		RouteParams(): {
 			
 		};
@@ -39,9 +39,11 @@ declare module "$app/types" {
 			"/api/db/messages": Record<string, never>;
 			"/api/db/servers": Record<string, never>;
 			"/api/db/sessions": Record<string, never>;
-			"/api/db/sessions/generate-title": Record<string, never>
+			"/api/db/sessions/generate-title": Record<string, never>;
+			"/api/system": Record<string, never>;
+			"/api/system/status": Record<string, never>
 		};
-		Pathname(): "/" | "/api" | "/api/" | "/api/config" | "/api/config/" | "/api/db" | "/api/db/" | "/api/db/messages" | "/api/db/messages/" | "/api/db/servers" | "/api/db/servers/" | "/api/db/sessions" | "/api/db/sessions/" | "/api/db/sessions/generate-title" | "/api/db/sessions/generate-title/";
+		Pathname(): "/" | "/api" | "/api/" | "/api/config" | "/api/config/" | "/api/db" | "/api/db/" | "/api/db/messages" | "/api/db/messages/" | "/api/db/servers" | "/api/db/servers/" | "/api/db/sessions" | "/api/db/sessions/" | "/api/db/sessions/generate-title" | "/api/db/sessions/generate-title/" | "/api/system" | "/api/system/" | "/api/system/status" | "/api/system/status/";
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
 		Asset(): "/favicon.png" | string & {};
 	}

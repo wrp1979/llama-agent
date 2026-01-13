@@ -14,5 +14,8 @@
 	],
 	"/api/db/sessions/generate-title": [
 		"src/routes/api/db/sessions/generate-title/+server.ts"
+	],
+	"/api/system/status": [
+		"src/routes/api/system/status/+server.ts"
 	]
 }
