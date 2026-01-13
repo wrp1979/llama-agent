@@ -38,7 +38,7 @@
   }
 </script>
 
-<div class="border-t border-gray-800 bg-gray-900/50 p-4">
+<div class="border-t border-white/[0.06] bg-black/30 backdrop-blur-sm p-4">
   <div class="flex gap-3 max-w-4xl mx-auto">
     <div class="flex-1 relative">
       <textarea

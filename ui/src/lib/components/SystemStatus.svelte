@@ -191,7 +191,7 @@
   {:else if status}
     <!-- GPU Section -->
     {#if status.gpu}
-      <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+      <div class="card">
         <div class="flex items-center gap-2 mb-3">
           <Cpu class="h-5 w-5 text-green-400" />
           <h3 class="font-semibold text-gray-200">{status.gpu.name}</h3>
@@ -240,7 +240,7 @@
     {/if}
 
     <!-- System Memory -->
-    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+    <div class="card">
       <div class="flex items-center gap-2 mb-3">
         <Gauge class="h-5 w-5 text-blue-400" />
         <h3 class="font-semibold text-gray-200">System Memory</h3>
@@ -264,7 +264,7 @@
     </div>
 
     <!-- Storage -->
-    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+    <div class="card">
       <div class="flex items-center gap-2 mb-3">
         <HardDrive class="h-5 w-5 text-orange-400" />
         <h3 class="font-semibold text-gray-200">Storage</h3>
@@ -288,7 +288,7 @@
     </div>
 
     <!-- Models -->
-    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+    <div class="card">
       <div class="flex items-center gap-2 mb-3">
         <Layers class="h-5 w-5 text-pink-400" />
         <h3 class="font-semibold text-gray-200">Models</h3>

@@ -44,7 +44,7 @@
 <div class="relative">
   <button
     onclick={() => (isOpen = !isOpen)}
-    class="w-full flex items-center justify-between gap-2 rounded-lg bg-gray-800 px-3 py-2 text-sm transition-colors hover:bg-gray-700"
+    class="w-full flex items-center justify-between gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm transition-all hover:bg-white/10"
   >
     <div class="flex items-center gap-2 min-w-0">
       <Server class="h-4 w-4 flex-shrink-0 text-gray-400" />
@@ -66,7 +66,7 @@
 
   {#if isOpen}
     <div
-      class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-700 bg-gray-800 shadow-xl"
+      class="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-2xl shadow-black/50"
     >
       <div class="max-h-64 overflow-y-auto p-1">
         {#each servers as server}
@@ -75,7 +75,7 @@
             tabindex="0"
             onclick={() => handleSelect(server.id)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(server.id); }}
-            class="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-gray-700 cursor-pointer {activeServer?.id === server.id ? 'bg-gray-700' : ''}"
+            class="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-all hover:bg-white/5 cursor-pointer {activeServer?.id === server.id ? 'bg-white/10' : ''}"
           >
             <div class="flex items-center gap-2 min-w-0">
               {#if server.status === 'connected'}
@@ -89,7 +89,7 @@
               {/if}
               <span class="truncate">{server.name}</span>
               {#if server.isLocal}
-                <span class="rounded bg-primary-900/50 px-1.5 py-0.5 text-[10px] text-primary-300">
+                <span class="rounded-md bg-primary-600/20 border border-primary-500/30 px-1.5 py-0.5 text-[10px] text-primary-300">
                   local
                 </span>
               {/if}
@@ -100,7 +100,7 @@
                 onEditServer(server);
                 isOpen = false;
               }}
-              class="p-1 rounded hover:bg-gray-600"
+              class="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
             >
               <Settings class="h-3.5 w-3.5 text-gray-400" />
             </button>
@@ -108,13 +108,13 @@
         {/each}
       </div>
 
-      <div class="border-t border-gray-700 p-1">
+      <div class="border-t border-white/5 p-1">
         <button
           onclick={() => {
             onAddServer();
             isOpen = false;
           }}
-          class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm text-primary-400 transition-colors hover:bg-gray-700"
+          class="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-primary-400 transition-all hover:bg-white/5"
         >
           <Plus class="h-4 w-4" />
           Add Server

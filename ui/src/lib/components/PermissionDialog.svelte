@@ -26,8 +26,8 @@
   }
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-  <div class="card max-w-lg w-full mx-4 space-y-4">
+<div class="modal-backdrop">
+  <div class="modal-content p-6 space-y-4">
     <div class="flex items-start gap-3">
       {#if permission.dangerous}
         <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-red-900/50">
@@ -49,7 +49,7 @@
       </div>
     </div>
 
-    <div class="rounded-lg bg-gray-900 p-3 border border-gray-800">
+    <div class="rounded-lg bg-black/30 p-3 border border-white/5">
       <pre class="whitespace-pre-wrap text-sm text-gray-300 font-mono">{permission.details}</pre>
     </div>
 

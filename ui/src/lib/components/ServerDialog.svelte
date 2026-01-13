@@ -83,8 +83,8 @@
   }
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-  <div class="card max-w-md w-full mx-4 space-y-4">
+<div class="modal-backdrop">
+  <div class="modal-content max-w-md p-6 space-y-4">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
         <Server class="h-5 w-5 text-primary-400" />
@@ -92,7 +92,7 @@
           {isNew ? 'Add Server' : 'Edit Server'}
         </h3>
       </div>
-      <button onclick={onClose} class="p-1 rounded hover:bg-gray-800">
+      <button onclick={onClose} class="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
         <X class="h-5 w-5 text-gray-400" />
       </button>
     </div>
@@ -178,12 +178,12 @@
     </div>
 
     <!-- Actions -->
-    <div class="flex items-center justify-between pt-2 border-t border-gray-800">
+    <div class="flex items-center justify-between pt-4 border-t border-white/5">
       <div>
         {#if !isNew && !server?.isLocal && onDelete}
           <button
             onclick={handleDelete}
-            class="btn text-red-400 hover:bg-red-900/20 gap-2"
+            class="btn btn-danger gap-2"
           >
             <Trash2 class="h-4 w-4" />
             Remove
