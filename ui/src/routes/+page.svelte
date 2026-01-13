@@ -172,6 +172,10 @@
 
     if (!currentDbSession?.externalId) return;
 
+    // Track if this is the first message (for title generation)
+    const isFirstMessage = messages.length === 0;
+    const sessionIdForTitle = currentDbSession.id;
+
     // Add user message
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -184,6 +188,22 @@
 
     // Save user message to database
     sessionsStore.saveMessage(currentDbSession.id, userMessage);
+
+    // Generate title asynchronously for first message
+    if (isFirstMessage) {
+      sessionsStore.generateTitle(sessionIdForTitle, content).then((title) => {
+        if (title) {
+          // Update the session in our local list
+          dbSessions = dbSessions.map((s) =>
+            s.id === sessionIdForTitle ? { ...s, name: title } : s
+          );
+          // Update current session if it's the same
+          if (currentDbSession?.id === sessionIdForTitle) {
+            currentDbSession = { ...currentDbSession, name: title };
+          }
+        }
+      });
+    }
 
     // Start streaming
     isLoading = true;
@@ -412,9 +432,14 @@
           class="group w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer {currentDbSession?.id === session.id ? 'bg-gray-800 text-gray-100' : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'}"
         >
           <div class="truncate">
-            <span class="font-mono text-xs">{session.externalId || session.id.slice(0, 16)}</span>
-            {#if session.name}
-              <span class="block text-[10px] text-gray-500 truncate">{session.name}</span>
+            {#if session.name && !session.name.startsWith('Session ')}
+              <span class="text-sm">{session.name}</span>
+              <span class="block text-[10px] text-gray-500 truncate font-mono">{session.externalId || session.id.slice(0, 16)}</span>
+            {:else}
+              <span class="font-mono text-xs">{session.externalId || session.id.slice(0, 16)}</span>
+              <span class="block text-[10px] text-gray-500 truncate">
+                {new Date(session.createdAt).toLocaleDateString()} {new Date(session.createdAt).toLocaleTimeString()}
+              </span>
             {/if}
           </div>
           <button

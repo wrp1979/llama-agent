@@ -2,6 +2,7 @@ import type { Message } from '$lib/types';
 
 const SESSIONS_API = '/api/db/sessions';
 const MESSAGES_API = '/api/db/messages';
+const GENERATE_TITLE_API = '/api/db/sessions/generate-title';
 
 export interface DbSession {
   id: string;
@@ -190,5 +191,23 @@ export const sessionsStore = {
     } catch (error) {
       console.error('Failed to clear messages:', error);
     }
+  },
+
+  // Generate a title for a session based on the first prompt
+  async generateTitle(sessionId: string, prompt: string): Promise<string | null> {
+    try {
+      const response = await fetch(GENERATE_TITLE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, prompt }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.title || null;
+      }
+    } catch (error) {
+      console.error('Failed to generate title:', error);
+    }
+    return null;
   },
 };
