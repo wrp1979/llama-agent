@@ -20,10 +20,12 @@ services:
               count: 1
               capabilities: [gpu]
     ports:
-      - "8081:8081"
+      # SECURITY: Only bind to localhost - API requires authentication
+      - "127.0.0.1:8081:8081"
     volumes:
       - ~/src:/src:ro
       - ./models:/models
+      - ./config:/config
       - ./entrypoint.sh:/app/entrypoint.sh:ro
       - ./download-monitor.py:/app/download-monitor.py:ro
     environment:
@@ -53,12 +55,16 @@ services:
       target: dev
     container_name: llama-agent-ui
     ports:
-      - "5173:5173"
+      # SECURITY: Only bind to localhost - UI contains sensitive session data
+      - "127.0.0.1:5173:5173"
     volumes:
       - ./ui:/app
       - /app/node_modules
+      - ./config:/app/config:ro
+      - ./data:/data
     environment:
       - NODE_ENV=development
+      - DB_PATH=/data/llama-agent.db
     depends_on:
       - llama
     restart: unless-stopped
@@ -75,6 +81,8 @@ services:
   #   container_name: llama-agent-ui-prod
   #   ports:
   #     - "80:80"
+  #   volumes:
+  #     - ./config:/app/config:ro
   #   depends_on:
   #     - llama
   #   restart: unless-stopped

@@ -9,6 +9,11 @@ STATUS_FILE="${MODEL_DIR}/.download-status.json"
 SERVER_HOST="${LLAMA_ARG_HOST:-0.0.0.0}"
 SERVER_PORT="${LLAMA_ARG_PORT:-8081}"
 
+# Config directory for API keys
+CONFIG_DIR="/config"
+API_KEY_FILE="${CONFIG_DIR}/local-api-key"
+SERVERS_FILE="${CONFIG_DIR}/servers.json"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,8 +29,63 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 mkdir -p "${MODEL_DIR}"
+mkdir -p "${CONFIG_DIR}"
 
-# Check if model exists
+# ============================================================================
+# API Key Management
+# ============================================================================
+if [ -f "${API_KEY_FILE}" ]; then
+    API_KEY=$(cat "${API_KEY_FILE}")
+    echo -e "${GREEN}✓ Using existing API key${NC}"
+else
+    API_KEY="sk-local-$(openssl rand -hex 16)"
+    echo "${API_KEY}" > "${API_KEY_FILE}"
+    chmod 600 "${API_KEY_FILE}"
+    echo -e "${GREEN}✓ Generated new API key${NC}"
+fi
+
+# Register local server in servers.json (for UI auto-discovery)
+if [ ! -f "${SERVERS_FILE}" ]; then
+    cat > "${SERVERS_FILE}" << EOF
+{
+  "servers": [
+    {
+      "id": "local",
+      "name": "Local Agent",
+      "url": "http://localhost:8081",
+      "apiKey": "${API_KEY}",
+      "isLocal": true,
+      "autoConnect": true
+    }
+  ],
+  "activeServerId": "local"
+}
+EOF
+    chmod 644 "${SERVERS_FILE}"
+    echo -e "${GREEN}✓ Created servers.json${NC}"
+else
+    # Update API key in existing servers.json if local entry exists
+    if command -v jq &> /dev/null; then
+        TEMP_FILE=$(mktemp)
+        jq --arg key "${API_KEY}" '
+          .servers = [.servers[] | if .id == "local" then .apiKey = $key else . end]
+        ' "${SERVERS_FILE}" > "${TEMP_FILE}" && mv "${TEMP_FILE}" "${SERVERS_FILE}"
+        echo -e "${GREEN}✓ Updated API key in servers.json${NC}"
+    fi
+fi
+
+echo ""
+echo -e "${BLUE}┌────────────────────────────────────────────────────────────┐${NC}"
+echo -e "${BLUE}│  API KEY INFORMATION                                       │${NC}"
+echo -e "${BLUE}├────────────────────────────────────────────────────────────┤${NC}"
+echo -e "${BLUE}│  Key File: ${NC}${API_KEY_FILE}"
+echo -e "${BLUE}│  Key:      ${NC}${API_KEY:0:20}..."
+echo -e "${BLUE}└────────────────────────────────────────────────────────────┘${NC}"
+echo ""
+
+# ============================================================================
+# Model Check and Server Start
+# ============================================================================
 if [ -f "${MODEL_PATH}" ]; then
     size=$(du -h "${MODEL_PATH}" | cut -f1)
     echo -e "${GREEN}✓ Model found: ${MODEL_NAME} (${size})${NC}"
@@ -41,14 +101,16 @@ if [ -f "${MODEL_PATH}" ]; then
     echo -e "${CYAN}│  GPU Layers: ${NC}${LLAMA_ARG_N_GPU_LAYERS:-999}"
     echo -e "${CYAN}│  Model: ${NC}${MODEL_NAME}"
     echo -e "${CYAN}│  API: ${NC}http://localhost:${SERVER_PORT}/v1/agent"
+    echo -e "${CYAN}│  Auth: ${NC}API Key enabled"
     echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
-    # Start llama-agent-server with model
+    # Start llama-agent-server with model AND API key
     exec ./llama-agent-server \
         -m "${MODEL_PATH}" \
         --host "${SERVER_HOST}" \
         --port "${SERVER_PORT}" \
+        --api-key "${API_KEY}" \
         -ngl "${LLAMA_ARG_N_GPU_LAYERS:-999}" \
         "$@"
 else
@@ -94,6 +156,7 @@ else
             -m "${MODEL_PATH}" \
             --host "${SERVER_HOST}" \
             --port "${SERVER_PORT}" \
+            --api-key "${API_KEY}" \
             -ngl "${LLAMA_ARG_N_GPU_LAYERS:-999}" \
             "$@"
     else
