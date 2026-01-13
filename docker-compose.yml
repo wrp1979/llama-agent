@@ -31,6 +31,7 @@ services:
       - ./download-monitor.py:/app/download-monitor.py:ro
       - ./update-status.sh:/app/update-status.sh:ro
       - ./model-manager.sh:/app/model-manager.sh:ro
+      - ./download-manager.py:/app/download-manager.py:ro
     environment:
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=8081

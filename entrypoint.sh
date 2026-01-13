@@ -114,6 +114,10 @@ if [ -f "${MODEL_PATH}" ]; then
     ) &
     echo -e "${GREEN}✓ System status updater started${NC}"
 
+    # Start download manager in background (handles model downloads from HF)
+    MODELS_DIR="${MODEL_DIR}" CONFIG_DIR="${CONFIG_DIR}" python3 /app/download-manager.py &
+    echo -e "${GREEN}✓ Download manager started${NC}"
+
     # Start model manager (handles model switching)
     export MODELS_DIR="${MODEL_DIR}"
     export LLAMA_ARG_HOST="${SERVER_HOST}"
