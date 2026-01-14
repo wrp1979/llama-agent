@@ -1,12 +1,14 @@
 # llama-agent
 
-> **Fork of [llama.cpp](https://github.com/ggml-org/llama.cpp)** with a native coding agent + modern web UI
+> **Fork of [gary149/llama-agent](https://github.com/gary149/llama-agent)** with a modern web UI for model management and chat
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## What's New in This Fork
 
-This fork extends llama.cpp with a **fully-featured coding agent** and a **modern web interface** for local LLM interaction. Everything runs locally with zero external dependencies.
+This fork builds on top of [gary149/llama-agent](https://github.com/gary149/llama-agent) (which adds a native coding agent to [llama.cpp](https://github.com/ggml-org/llama.cpp)) and adds a **modern web interface** for local LLM interaction.
+
+**Upstream chain:** [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) → [gary149/llama-agent](https://github.com/gary149/llama-agent) → this fork
 
 ### Web UI with Real-time System Monitoring
 
@@ -34,18 +36,23 @@ Clean, modern chat interface with session persistence, auto-generated titles, an
 
 ### Key Features
 
+#### From [gary149/llama-agent](https://github.com/gary149/llama-agent)
 | Feature | Description |
 |---------|-------------|
 | **Native Coding Agent** | `llama-agent` CLI with bash, read, write, edit, glob tools |
 | **Subagents** | Spawn specialized agents for complex tasks (explore, plan, bash) |
 | **HTTP API Server** | `llama-agent-server` with SSE streaming and permission handling |
+| **Skills System** | Extensible prompt modules following [agentskills.io](https://agentskills.io) |
+| **MCP Support** | Model Context Protocol server integration |
+
+#### Added in this fork
+| Feature | Description |
+|---------|-------------|
 | **SvelteKit Web UI** | Modern interface with glassmorphism design |
 | **Model Hot-Swap** | Switch models without restarting the server |
 | **HuggingFace Integration** | Search, download, and manage models from the UI |
 | **System Dashboard** | Real-time GPU/RAM/Disk monitoring |
 | **Session Persistence** | SQLite-backed chat history with auto-generated titles |
-| **Skills System** | Extensible prompt modules following [agentskills.io](https://agentskills.io) |
-| **MCP Support** | Model Context Protocol server integration |
 | **Docker Ready** | CUDA-optimized compose with dev hot-reload |
 
 ### Quick Start (This Fork)
