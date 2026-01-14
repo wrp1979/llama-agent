@@ -1,13 +1,12 @@
 import { json } from "@sveltejs/kit";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-const REQUEST_FILE = "/app/config/switch-model.request";
-const STATUS_FILE = "/app/config/switch-model.status";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
+import { d as SWITCH_MODEL_STATUS_FILE, C as CONFIG_DIR, e as SWITCH_MODEL_REQUEST_FILE } from "../../../../../chunks/config.js";
 const GET = async () => {
   try {
-    if (!existsSync(STATUS_FILE)) {
+    if (!existsSync(SWITCH_MODEL_STATUS_FILE)) {
       return json({ status: { status: "idle", message: "No switch in progress", model: "", timestamp: 0 } });
     }
-    const content = readFileSync(STATUS_FILE, "utf-8");
+    const content = readFileSync(SWITCH_MODEL_STATUS_FILE, "utf-8");
     const status = JSON.parse(content);
     return json({ status });
   } catch (error) {
@@ -22,7 +21,10 @@ const POST = async ({ request }) => {
     if (!model) {
       return json({ error: "Model name is required" }, { status: 400 });
     }
-    writeFileSync(REQUEST_FILE, model, "utf-8");
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    writeFileSync(SWITCH_MODEL_REQUEST_FILE, model, "utf-8");
     return json({ success: true, message: `Requested switch to ${model}` });
   } catch (error) {
     console.error("Failed to request model switch:", error);

@@ -91,6 +91,13 @@ return {
 				endpoint: __memo(() => import('./entries/endpoints/api/system/hardware/_server.ts.js'))
 			},
 			{
+				id: "/api/system/models",
+				pattern: /^\/api\/system\/models\/?$/,
+				params: [],
+				page: null,
+				endpoint: __memo(() => import('./entries/endpoints/api/system/models/_server.ts.js'))
+			},
+			{
 				id: "/api/system/status",
 				pattern: /^\/api\/system\/status\/?$/,
 				params: [],

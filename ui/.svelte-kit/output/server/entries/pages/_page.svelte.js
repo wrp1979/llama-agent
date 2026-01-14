@@ -1,10 +1,6 @@
 import { w as sanitize_props, x as rest_props, y as attributes, z as clsx, F as ensure_array_like, G as element, J as slot, K as bind_props, N as spread_props, O as attr_class, P as stringify, Q as attr } from "../../chunks/index.js";
-import { l as ssr_context, m as fallback, k as escape_html } from "../../chunks/context.js";
+import { l as fallback, k as escape_html } from "../../chunks/context.js";
 import "clsx";
-function onDestroy(fn) {
-  /** @type {SSRContext} */
-  ssr_context.r.on_destroy(fn);
-}
 /**
  * @license lucide-svelte v0.562.0 - ISC
  *
@@ -1438,27 +1434,59 @@ function ChatMessage($$renderer, $$props) {
     } else {
       $$renderer2.push("<!--[!-->");
     }
-    $$renderer2.push(`<!--]--></div> <div class="prose prose-sm max-w-none">`);
+    $$renderer2.push(`<!--]--></div> <div class="prose prose-sm max-w-none select-text">`);
     if (message.role === "tool") {
       $$renderer2.push("<!--[-->");
-      $$renderer2.push(`<pre class="whitespace-pre-wrap text-xs text-gray-400">${escape_html(message.content)}</pre>`);
+      $$renderer2.push(`<pre class="whitespace-pre-wrap text-xs text-gray-400 select-text cursor-text">${escape_html(message.content)}</pre>`);
     } else {
       $$renderer2.push("<!--[!-->");
-      $$renderer2.push(`<div class="whitespace-pre-wrap text-gray-200">${escape_html(message.content)}</div>`);
+      $$renderer2.push(`<div class="whitespace-pre-wrap text-gray-200 select-text cursor-text">${escape_html(message.content)}</div>`);
     }
     $$renderer2.push(`<!--]--></div></div></div>`);
   });
 }
 function ChatInput($$renderer, $$props) {
   $$renderer.component(($$renderer2) => {
-    let { disabled = false } = $$props;
+    let {
+      disabled = false,
+      contextTokens = 0,
+      maxContextTokens = 0
+    } = $$props;
     let input = "";
-    $$renderer2.push(`<div class="border-t border-white/[0.06] bg-black/30 backdrop-blur-sm p-4"><div class="flex gap-3 max-w-4xl mx-auto"><div class="flex-1 relative"><textarea placeholder="Send a message... (Shift+Enter for new line)" rows="1" class="input resize-none pr-12 min-h-[44px] max-h-[200px]"${attr("disabled", disabled, true)}>`);
+    let estimatedTokens = Math.ceil(input.length / 4);
+    function formatTokens(n) {
+      if (n >= 1e3) {
+        return (n / 1e3).toFixed(1) + "k";
+      }
+      return n.toString();
+    }
+    $$renderer2.push(`<div class="border-t border-white/[0.06] bg-black/30 backdrop-blur-sm p-4"><div class="max-w-4xl mx-auto"><div class="flex items-center justify-between mb-2 px-1"><div class="flex items-center gap-3 text-xs text-gray-500">`);
+    if (input.length > 0) {
+      $$renderer2.push("<!--[-->");
+      $$renderer2.push(`<span class="font-mono"><span class="text-gray-400">~${escape_html(formatTokens(estimatedTokens))}</span> tokens</span>`);
+    } else {
+      $$renderer2.push("<!--[!-->");
+    }
+    $$renderer2.push(`<!--]--> `);
+    if (contextTokens > 0) {
+      $$renderer2.push("<!--[-->");
+      $$renderer2.push(`<span class="font-mono">Context: <span class="text-gray-400">${escape_html(formatTokens(contextTokens))}</span> `);
+      if (maxContextTokens > 0) {
+        $$renderer2.push("<!--[-->");
+        $$renderer2.push(`<span class="text-gray-600">/ ${escape_html(formatTokens(maxContextTokens))}</span>`);
+      } else {
+        $$renderer2.push("<!--[!-->");
+      }
+      $$renderer2.push(`<!--]--></span>`);
+    } else {
+      $$renderer2.push("<!--[!-->");
+    }
+    $$renderer2.push(`<!--]--></div> <span class="text-[10px] text-gray-600">Shift+Enter for new line</span></div> <div class="flex gap-3 items-end"><div class="flex-1 relative"><textarea placeholder="Type your message..." rows="2" class="input resize-none pr-4 min-h-[72px] max-h-[320px] py-3 leading-relaxed"${attr("disabled", disabled, true)}>`);
     const $$body = escape_html(input);
     if ($$body) {
       $$renderer2.push(`${$$body}`);
     }
-    $$renderer2.push(`</textarea></div> <button${attr("disabled", disabled || !input.trim(), true)} class="btn btn-primary h-11 w-11 p-0 flex-shrink-0">`);
+    $$renderer2.push(`</textarea></div> <button${attr("disabled", disabled || !input.trim(), true)} class="btn btn-primary h-12 w-12 p-0 flex-shrink-0 mb-0.5">`);
     if (disabled) {
       $$renderer2.push("<!--[-->");
       Loader_circle($$renderer2, { class: "h-5 w-5 animate-spin" });
@@ -1466,7 +1494,7 @@ function ChatInput($$renderer, $$props) {
       $$renderer2.push("<!--[!-->");
       Send($$renderer2, { class: "h-5 w-5" });
     }
-    $$renderer2.push(`<!--]--></button></div></div>`);
+    $$renderer2.push(`<!--]--></button></div></div></div>`);
   });
 }
 function ServerSelector($$renderer, $$props) {
@@ -1523,18 +1551,6 @@ function ServerSelector($$renderer, $$props) {
     $$renderer2.push(`<!--]-->`);
   });
 }
-function SystemStatus($$renderer, $$props) {
-  $$renderer.component(($$renderer2) => {
-    onDestroy(() => {
-    });
-    $$renderer2.push(`<div class="space-y-4">`);
-    {
-      $$renderer2.push("<!--[-->");
-      $$renderer2.push(`<div class="animate-pulse space-y-4"><div class="h-20 bg-gray-800 rounded-lg"></div> <div class="h-20 bg-gray-800 rounded-lg"></div></div>`);
-    }
-    $$renderer2.push(`<!--]--></div>`);
-  });
-}
 let servers = [];
 let activeServerId = null;
 const serversStore = {
@@ -1549,18 +1565,21 @@ function _page($$renderer, $$props) {
     let messages = [];
     let yoloMode = true;
     let activeServer = serversStore.activeServer;
+    let inputDisabled = true;
+    let contextTokens = messages.reduce((total, msg) => total + Math.ceil(msg.content.length / 4), 0);
     $$renderer2.push(`<div class="flex h-full bg-pattern"><aside class="w-64 flex-shrink-0 border-r border-white/[0.06] bg-black/40 backdrop-blur-sm flex flex-col"><div class="p-4 border-b border-white/[0.06]"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 shadow-lg shadow-primary-600/20">`);
     Bot($$renderer2, { class: "h-6 w-6 text-white" });
     $$renderer2.push(`<!----></div> <div><h1 class="font-semibold text-gray-100">llama-agent</h1> <div class="flex items-center gap-1.5"><div${attr_class(`h-2 w-2 rounded-full ${stringify(
-      // Reload sessions when active server changes or connects
+      // Reload sessions only when switching to a different connected server
+      // Only load if we have a new server that's connected (use cached isConnected)
       activeServer?.status === "connected" ? "bg-green-500" : activeServer?.status === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
     )}`)}></div> <span class="text-xs text-gray-500">${escape_html(activeServer?.status === "connected" ? "Connected" : activeServer?.status === "connecting" ? "Connecting..." : "Disconnected")}</span></div></div></div></div> <div class="p-3 border-b border-white/[0.06]">`);
     ServerSelector($$renderer2, {
       activeServer
     });
-    $$renderer2.push(`<!----></div> <div class="p-3 space-y-2"><button${attr("disabled", activeServer?.status !== "connected", true)} class="btn btn-primary w-full gap-2">`);
+    $$renderer2.push(`<!----></div> <div class="p-3 space-y-2"><button${attr("disabled", true, true)} class="btn btn-primary w-full gap-2">`);
     Plus($$renderer2, { class: "h-4 w-4" });
-    $$renderer2.push(`<!----> New Session</button> <button${attr("disabled", activeServer?.status !== "connected", true)}${attr_class(`btn w-full gap-2 ${stringify("btn-secondary")}`)}>`);
+    $$renderer2.push(`<!----> New Session</button> <button${attr("disabled", true, true)}${attr_class(`btn w-full gap-2 ${stringify("btn-secondary")}`)}>`);
     Layout_dashboard($$renderer2, { class: "h-4 w-4" });
     $$renderer2.push(`<!----> Dashboard</button> <button class="btn btn-secondary w-full gap-2">`);
     Store($$renderer2, { class: "h-4 w-4" });
@@ -1586,20 +1605,15 @@ function _page($$renderer, $$props) {
     {
       $$renderer2.push("<!--[!-->");
     }
-    $$renderer2.push(`<!--]--></div></aside> <main class="flex-1 flex flex-col min-w-0"><div class="flex-1 overflow-y-auto p-4 space-y-3">`);
+    $$renderer2.push(`<!--]--></div></aside> <main class="flex-1 flex flex-col min-w-0"><div class="flex-1 overflow-y-auto p-4 space-y-3 select-text">`);
     if (messages.length === 0) {
       $$renderer2.push("<!--[-->");
       $$renderer2.push(`<div class="flex flex-col items-center justify-center h-full"><div class="w-full max-w-lg">`);
-      if (activeServer?.status !== "connected") {
+      {
         $$renderer2.push("<!--[-->");
         $$renderer2.push(`<div class="text-center mb-6"><div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600/10 border border-primary-500/20 mb-4 mx-auto">`);
         Terminal($$renderer2, { class: "h-8 w-8 text-primary-400" });
         $$renderer2.push(`<!----></div> <h2 class="text-xl font-semibold text-gray-200 mb-2">llama-agent</h2> <p class="text-gray-500">Connect to a server to start chatting with the agent.</p></div>`);
-      } else {
-        $$renderer2.push("<!--[!-->");
-        $$renderer2.push(`<div class="text-center mb-6"><h2 class="text-xl font-semibold text-gray-200 mb-2">System Status</h2> <p class="text-gray-500 text-sm">Agent server resources and available models</p></div> `);
-        SystemStatus($$renderer2);
-        $$renderer2.push(`<!----> <div class="mt-6"><p class="text-xs text-gray-500 text-center mb-3">Quick prompts</p> <div class="grid grid-cols-2 gap-2 text-sm"><button class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3"><span class="text-gray-400">List files</span></button> <button class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3"><span class="text-gray-400">List tools</span></button> <button class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3"><span class="text-gray-400">Find TODOs</span></button> <button class="card hover:bg-white/[0.06] hover:border-white/10 transition-all text-left p-3"><span class="text-gray-400">Project structure</span></button></div></div>`);
       }
       $$renderer2.push(`<!--]--></div></div>`);
     } else {
@@ -1613,9 +1627,7 @@ function _page($$renderer, $$props) {
       $$renderer2.push(`<!--]-->`);
     }
     $$renderer2.push(`<!--]--></div> `);
-    ChatInput($$renderer2, {
-      disabled: activeServer?.status !== "connected"
-    });
+    ChatInput($$renderer2, { disabled: inputDisabled, contextTokens });
     $$renderer2.push(`<!----></main></div> `);
     {
       $$renderer2.push("<!--[!-->");

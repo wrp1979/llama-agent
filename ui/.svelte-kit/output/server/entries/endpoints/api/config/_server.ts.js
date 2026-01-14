@@ -1,10 +1,10 @@
 import { json } from "@sveltejs/kit";
 import { existsSync, readFileSync } from "fs";
-const CONFIG_PATH = "/app/config/servers.json";
+import { S as SERVERS_CONFIG_FILE } from "../../../../chunks/config.js";
 const GET = async () => {
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const content = readFileSync(CONFIG_PATH, "utf-8");
+    if (existsSync(SERVERS_CONFIG_FILE)) {
+      const content = readFileSync(SERVERS_CONFIG_FILE, "utf-8");
       const config = JSON.parse(content);
       return json(config);
     }

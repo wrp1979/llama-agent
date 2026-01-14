@@ -1,4 +1,4 @@
-import { k as escape_html, p as set_ssr_context, l as ssr_context, q as push, t as pop, n as noop } from "./context.js";
+import { k as escape_html, m as set_ssr_context, p as ssr_context, q as push, t as pop, n as noop } from "./context.js";
 import { clsx as clsx$1 } from "clsx";
 const DERIVED = 1 << 1;
 const EFFECT = 1 << 2;

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-const STATUS_FILE = "/app/config/system-status.json";
+import "./config.js";
 function estimateLayers(modelSizeGb) {
   if (modelSizeGb < 3) return 24;
   if (modelSizeGb < 6) return 32;
@@ -13,10 +13,10 @@ const VRAM_OVERHEAD_MB = 1500;
 const RAM_OVERHEAD_MB = 2e3;
 function getHardwareInfo() {
   try {
-    if (!existsSync(STATUS_FILE)) {
+    if (!existsSync(SYSTEM_STATUS_FILE)) {
       return null;
     }
-    const content = readFileSync(STATUS_FILE, "utf-8");
+    const content = readFileSync(SYSTEM_STATUS_FILE, "utf-8");
     const status = JSON.parse(content);
     return {
       gpu: status.gpu ? {

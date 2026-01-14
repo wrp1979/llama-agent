@@ -27,6 +27,9 @@
 	"/api/system/hardware": [
 		"src/routes/api/system/hardware/+server.ts"
 	],
+	"/api/system/models": [
+		"src/routes/api/system/models/+server.ts"
+	],
 	"/api/system/status": [
 		"src/routes/api/system/status/+server.ts"
 	],

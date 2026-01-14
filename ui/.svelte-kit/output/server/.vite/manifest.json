@@ -9,6 +9,10 @@
       "_environment.js"
     ]
   },
+  "_config.js": {
+    "file": "chunks/config.js",
+    "name": "config"
+  },
   "_context.js": {
     "file": "chunks/context.js",
     "name": "context"
@@ -31,7 +35,10 @@
   },
   "_hardware.js": {
     "file": "chunks/hardware.js",
-    "name": "hardware"
+    "name": "hardware",
+    "imports": [
+      "_config.js"
+    ]
   },
   "_index.js": {
     "file": "chunks/index.js",
@@ -42,7 +49,10 @@
   },
   "_index2.js": {
     "file": "chunks/index2.js",
-    "name": "index"
+    "name": "index",
+    "imports": [
+      "_config.js"
+    ]
   },
   "_internal.js": {
     "file": "chunks/internal.js",
@@ -105,7 +115,7 @@
     "src": "src/routes/+layout.svelte",
     "isEntry": true,
     "css": [
-      "_app/immutable/assets/_layout.CZqnoqGt.css"
+      "_app/immutable/assets/_layout.Dp71c3rw.css"
     ]
   },
   "src/routes/+page.svelte": {
@@ -122,7 +132,10 @@
     "file": "entries/endpoints/api/config/_server.ts.js",
     "name": "entries/endpoints/api/config/_server.ts",
     "src": "src/routes/api/config/+server.ts",
-    "isEntry": true
+    "isEntry": true,
+    "imports": [
+      "_config.js"
+    ]
   },
   "src/routes/api/db/messages/+server.ts": {
     "file": "entries/endpoints/api/db/messages/_server.ts.js",
@@ -173,7 +186,10 @@
     "file": "entries/endpoints/api/models/download/_server.ts.js",
     "name": "entries/endpoints/api/models/download/_server.ts",
     "src": "src/routes/api/models/download/+server.ts",
-    "isEntry": true
+    "isEntry": true,
+    "imports": [
+      "_config.js"
+    ]
   },
   "src/routes/api/models/search/+server.ts": {
     "file": "entries/endpoints/api/models/search/_server.ts.js",
@@ -190,16 +206,31 @@
       "_hardware.js"
     ]
   },
+  "src/routes/api/system/models/+server.ts": {
+    "file": "entries/endpoints/api/system/models/_server.ts.js",
+    "name": "entries/endpoints/api/system/models/_server.ts",
+    "src": "src/routes/api/system/models/+server.ts",
+    "isEntry": true,
+    "imports": [
+      "_config.js"
+    ]
+  },
   "src/routes/api/system/status/+server.ts": {
     "file": "entries/endpoints/api/system/status/_server.ts.js",
     "name": "entries/endpoints/api/system/status/_server.ts",
     "src": "src/routes/api/system/status/+server.ts",
-    "isEntry": true
+    "isEntry": true,
+    "imports": [
+      "_config.js"
+    ]
   },
   "src/routes/api/system/switch-model/+server.ts": {
     "file": "entries/endpoints/api/system/switch-model/_server.ts.js",
     "name": "entries/endpoints/api/system/switch-model/_server.ts",
     "src": "src/routes/api/system/switch-model/+server.ts",
-    "isEntry": true
+    "isEntry": true,
+    "imports": [
+      "_config.js"
+    ]
   }
 }

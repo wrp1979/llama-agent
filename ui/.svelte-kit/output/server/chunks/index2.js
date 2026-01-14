@@ -4,6 +4,7 @@ import { sqliteTable, integer, text, real } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
+import { S as SERVERS_CONFIG_FILE } from "./config.js";
 const servers = sqliteTable("servers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -67,7 +68,6 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   sessionsRelations
 }, Symbol.toStringTag, { value: "Module" }));
 const DB_PATH = process.env.DB_PATH || "/data/llama-agent.db";
-const CONFIG_PATH = "/app/config/servers.json";
 const dbDir = dirname(DB_PATH);
 if (!existsSync(dbDir)) {
   try {
@@ -81,8 +81,8 @@ sqlite.pragma("journal_mode = WAL");
 const db = drizzle(sqlite, { schema });
 function readConfigFile() {
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const content = readFileSync(CONFIG_PATH, "utf-8");
+    if (existsSync(SERVERS_CONFIG_FILE)) {
+      const content = readFileSync(SERVERS_CONFIG_FILE, "utf-8");
       return JSON.parse(content);
     }
   } catch (error) {

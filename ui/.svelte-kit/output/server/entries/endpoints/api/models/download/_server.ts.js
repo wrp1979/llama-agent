@@ -1,7 +1,6 @@
 import { json } from "@sveltejs/kit";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-const DOWNLOAD_REQUEST_FILE = "/app/config/download-model.request";
-const DOWNLOAD_STATUS_FILE = "/app/config/download-model.status";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
+import { D as DOWNLOAD_STATUS_FILE, C as CONFIG_DIR, a as DOWNLOAD_REQUEST_FILE } from "../../../../../chunks/config.js";
 const GET = async () => {
   try {
     if (!existsSync(DOWNLOAD_STATUS_FILE)) {
@@ -43,6 +42,9 @@ const POST = async ({ request }) => {
     const { repoId, filename } = body;
     if (!repoId || !filename) {
       return json({ error: "repoId and filename are required" }, { status: 400 });
+    }
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
     }
     const requestData = JSON.stringify({ repoId, filename });
     writeFileSync(DOWNLOAD_REQUEST_FILE, requestData, "utf-8");
