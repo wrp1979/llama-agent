@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Cpu, HardDrive, Gauge, Thermometer, Database, Layers, Loader2, AlertCircle } from 'lucide-svelte';
+  import { Cpu, HardDrive, Gauge, Thermometer, Database, Layers, Loader2, AlertCircle, Trash2 } from 'lucide-svelte';
 
   interface SystemStatus {
     timestamp: number;
@@ -50,6 +50,8 @@
   let hasLoaded = $state(false);
   let error = $state<string | null>(null);
   let switchingModel = $state<string | null>(null);
+  let deletingModel = $state<string | null>(null);
+  let confirmDelete = $state<string | null>(null);
   let interval: ReturnType<typeof setInterval>;
   let switchInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -126,6 +128,34 @@
     }
   }
 
+  async function handleDeleteModel(modelName: string) {
+    if (deletingModel) return;
+
+    deletingModel = modelName;
+
+    try {
+      const response = await fetch('/api/system/models', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete model');
+      }
+
+      // Refresh the model list
+      await fetchStatus();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to delete model';
+    } finally {
+      deletingModel = null;
+      confirmDelete = null;
+    }
+  }
+
   function formatSize(mb: number): string {
     if (mb >= 1024) {
       return `${(mb / 1024).toFixed(1)} GB`;
@@ -154,7 +184,7 @@
 
   onMount(() => {
     fetchStatus();
-    interval = setInterval(fetchStatus, 5000);
+    interval = setInterval(fetchStatus, 10000); // Reduced from 5s to minimize re-renders
     return () => clearInterval(interval);
   });
 
@@ -338,19 +368,44 @@
                   <p class="text-xs text-gray-500">{model.size_gb.toFixed(1)} GB</p>
                 </div>
               </div>
-              {#if model.name === status.active_model}
-                <span class="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full">Active</span>
-              {:else if switchingModel === model.name}
-                <span class="text-xs text-yellow-400">Loading...</span>
-              {:else}
-                <button
-                  onclick={() => handleSwitchModel(model.name)}
-                  disabled={!!switchingModel}
-                  class="text-xs text-gray-400 hover:text-primary-400 px-2 py-1 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Load
-                </button>
-              {/if}
+              <div class="flex items-center gap-2">
+                {#if model.name === status.active_model}
+                  <span class="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full">Active</span>
+                {:else if switchingModel === model.name}
+                  <span class="text-xs text-yellow-400">Loading...</span>
+                {:else if confirmDelete === model.name}
+                  <span class="text-xs text-red-400">Delete?</span>
+                  <button
+                    onclick={() => handleDeleteModel(model.name)}
+                    disabled={!!deletingModel}
+                    class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onclick={() => confirmDelete = null}
+                    class="text-xs text-gray-400 hover:text-gray-300 px-2 py-1"
+                  >
+                    No
+                  </button>
+                {:else}
+                  <button
+                    onclick={() => handleSwitchModel(model.name)}
+                    disabled={!!switchingModel || !!deletingModel}
+                    class="text-xs text-gray-400 hover:text-primary-400 px-2 py-1 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Load
+                  </button>
+                  <button
+                    onclick={() => confirmDelete = model.name}
+                    disabled={!!switchingModel || !!deletingModel}
+                    class="text-xs text-gray-500 hover:text-red-400 p-1 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Delete model"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                {/if}
+              </div>
             </div>
           {/each}
         </div>

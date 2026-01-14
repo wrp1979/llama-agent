@@ -280,14 +280,23 @@
           </button>
         </div>
         <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-          <div
-            class="h-full bg-gradient-to-r from-primary-600 to-primary-400 transition-all duration-300"
-            style="width: {downloadStatus.progress}%"
-          ></div>
+          {#if downloadStatus.progress > 0}
+            <div
+              class="h-full bg-gradient-to-r from-primary-600 to-primary-400 transition-all duration-300"
+              style="width: {downloadStatus.progress}%"
+            ></div>
+          {:else}
+            <!-- Indeterminate progress animation when progress is 0 -->
+            <div class="h-full w-1/3 bg-gradient-to-r from-primary-600 to-primary-400 animate-indeterminate"></div>
+          {/if}
         </div>
         <div class="flex justify-between mt-1 text-xs text-gray-400">
-          <span>{downloadStatus.message}</span>
-          <span>{downloadStatus.speed} • ETA: {downloadStatus.eta}</span>
+          <span>{downloadStatus.message || 'Download in progress...'}</span>
+          {#if downloadStatus.speed && downloadStatus.eta}
+            <span>{downloadStatus.speed} • ETA: {downloadStatus.eta}</span>
+          {:else}
+            <span>Please wait...</span>
+          {/if}
         </div>
       </div>
     {/if}

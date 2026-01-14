@@ -53,11 +53,11 @@
       {/if}
     </div>
 
-    <div class="prose prose-sm max-w-none">
+    <div class="prose prose-sm max-w-none select-text">
       {#if message.role === 'tool'}
-        <pre class="whitespace-pre-wrap text-xs text-gray-400">{message.content}</pre>
+        <pre class="whitespace-pre-wrap text-xs text-gray-400 select-text cursor-text">{message.content}</pre>
       {:else}
-        <div class="whitespace-pre-wrap text-gray-200">{message.content}</div>
+        <div class="whitespace-pre-wrap text-gray-200 select-text cursor-text">{message.content}</div>
       {/if}
     </div>
   </div>

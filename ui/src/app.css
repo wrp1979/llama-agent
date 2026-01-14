@@ -20,6 +20,7 @@
   body {
     @apply bg-[#0a0a0b] text-gray-100;
   }
+
 }
 
 @layer components {
@@ -165,4 +166,33 @@ code {
 
 .prose pre code {
   @apply bg-transparent p-0;
+}
+
+/* Indeterminate progress bar animation */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.animate-indeterminate {
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+/* ============================================
+   FORCE TEXT SELECTION GLOBALLY
+   This MUST be at the end to override everything
+   ============================================ */
+*:not(button):not(input):not(textarea):not(select):not([role="button"]) {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  cursor: auto;
+}
+
+/* Restore pointer cursor for clickable elements */
+button, a, [role="button"], [onclick] {
+  cursor: pointer;
 }

@@ -148,11 +148,18 @@ export const serversStore = {
   },
 
   setStatus(id: string, status: AgentServer['status'], error?: string): void {
-    servers = servers.map(s =>
-      s.id === id
-        ? { ...s, status, lastError: error, lastChecked: new Date() }
-        : s
-    );
+    const server = servers.find(s => s.id === id);
+    if (!server) return;
+
+    // Only update if status actually changed to avoid unnecessary re-renders
+    if (server.status === status && server.lastError === error) {
+      return;
+    }
+
+    // Mutate in place to minimize reactivity triggers
+    server.status = status;
+    server.lastError = error;
+    server.lastChecked = new Date();
   },
 
   getServer(id: string): AgentServer | undefined {

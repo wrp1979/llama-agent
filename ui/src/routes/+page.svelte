@@ -39,8 +39,25 @@
   // Marketplace state
   let showMarketplace = $state(false);
 
-  // Derived state
+  // Derived state - use getter to avoid unnecessary subscriptions in templates
   let activeServer = $derived(serversStore.activeServer);
+
+  // Cached connection state to prevent input focus loss from re-renders
+  let isConnected = $state(false);
+  $effect(() => {
+    const connected = activeServer?.status === 'connected';
+    if (isConnected !== connected) {
+      isConnected = connected;
+    }
+  });
+
+  // Input disabled state - only changes when isLoading or isConnected changes
+  let inputDisabled = $derived(isLoading || !isConnected);
+
+  // Estimate context tokens from messages (~4 chars per token)
+  let contextTokens = $derived(
+    messages.reduce((total, msg) => total + Math.ceil(msg.content.length / 4), 0)
+  );
 
   // Auto-scroll to bottom
   function scrollToBottom() {
@@ -49,13 +66,19 @@
     }
   }
 
-  // Check health of active server
+  // Check health of active server (without triggering unnecessary re-renders)
   async function checkActiveServerHealth() {
-    if (!activeServer) return;
+    const server = serversStore.activeServer;
+    if (!server) return;
 
-    serversStore.setStatus(activeServer.id, 'connecting');
-    const isHealthy = await checkServerHealth(activeServer);
-    serversStore.setStatus(activeServer.id, isHealthy ? 'connected' : 'disconnected');
+    // Don't set 'connecting' to avoid flicker - just check health silently
+    const isHealthy = await checkServerHealth(server);
+    const newStatus = isHealthy ? 'connected' : 'disconnected';
+
+    // Only update if status actually changed
+    if (server.status !== newStatus) {
+      serversStore.setStatus(server.id, newStatus);
+    }
   }
 
   // Load sessions from database for active server
@@ -368,7 +391,7 @@
 
     const healthInterval = setInterval(() => {
       checkActiveServerHealth();
-    }, 5000);
+    }, 10000); // Reduced from 5s to 10s to minimize UI disruption
 
     return () => {
       clearInterval(healthInterval);
@@ -376,9 +399,16 @@
     };
   });
 
-  // Reload sessions when active server changes or connects
+  // Track previous server state to avoid unnecessary reloads
+  let lastLoadedServerId: string | null = null;
+
+  // Reload sessions only when switching to a different connected server
   $effect(() => {
-    if (activeServer?.status === 'connected') {
+    const serverId = activeServer?.id ?? null;
+
+    // Only load if we have a new server that's connected (use cached isConnected)
+    if (isConnected && serverId && serverId !== lastLoadedServerId) {
+      lastLoadedServerId = serverId;
       loadSessions();
     }
   });
@@ -418,7 +448,7 @@
     <div class="p-3 space-y-2">
       <button
         onclick={handleNewSession}
-        disabled={isLoading || activeServer?.status !== 'connected'}
+        disabled={isLoading || !isConnected}
         class="btn btn-primary w-full gap-2"
       >
         <Plus class="h-4 w-4" />
@@ -426,7 +456,7 @@
       </button>
       <button
         onclick={() => { showDashboard = true; currentDbSession = null; messages = []; }}
-        disabled={activeServer?.status !== 'connected'}
+        disabled={!isConnected}
         class="btn w-full gap-2 {showDashboard ? 'bg-white/10 text-white border border-white/10' : 'btn-secondary'}"
       >
         <LayoutDashboard class="h-4 w-4" />
@@ -511,11 +541,11 @@
   <!-- Main chat area -->
   <main class="flex-1 flex flex-col min-w-0">
     <!-- Messages / Dashboard -->
-    <div bind:this={messagesContainer} class="flex-1 overflow-y-auto p-4 space-y-3">
+    <div bind:this={messagesContainer} class="flex-1 overflow-y-auto p-4 space-y-3 select-text">
       {#if showDashboard || messages.length === 0}
         <div class="flex flex-col items-center justify-center h-full">
           <div class="w-full max-w-lg">
-            {#if activeServer?.status !== 'connected'}
+            {#if !isConnected}
               <div class="text-center mb-6">
                 <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600/10 border border-primary-500/20 mb-4 mx-auto">
                   <Terminal class="h-8 w-8 text-primary-400" />
@@ -559,7 +589,7 @@
     </div>
 
     <!-- Input -->
-    <ChatInput onSend={handleSend} disabled={isLoading || activeServer?.status !== 'connected'} />
+    <ChatInput onSend={handleSend} disabled={inputDisabled} {contextTokens} />
   </main>
 </div>
 
