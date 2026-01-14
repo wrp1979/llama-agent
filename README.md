@@ -1,10 +1,76 @@
-# llama.cpp
+# llama-agent
 
-![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
+> **Fork of [llama.cpp](https://github.com/ggml-org/llama.cpp)** with a native coding agent + modern web UI
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp)](https://github.com/ggml-org/llama.cpp/releases)
-[![Server](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml/badge.svg)](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml)
+
+## What's New in This Fork
+
+This fork extends llama.cpp with a **fully-featured coding agent** and a **modern web interface** for local LLM interaction. Everything runs locally with zero external dependencies.
+
+### Web UI with Real-time System Monitoring
+
+<p align="center">
+<img src="docs/screenshots/dashboard.png" alt="System Dashboard" width="800"/>
+</p>
+
+Monitor GPU, RAM, disk usage and manage models in real-time. The dashboard shows your RTX 4090's VRAM, system memory, and all downloaded models with one-click switching.
+
+### Model Marketplace
+
+<p align="center">
+<img src="docs/screenshots/marketplace.png" alt="Model Marketplace" width="800"/>
+</p>
+
+Search and download GGUF models directly from HuggingFace. Browse popular providers like bartowski, unsloth, TheBloke, and QuantFactory. Models download with progress tracking and auto-detect context size.
+
+### Chat Interface
+
+<p align="center">
+<img src="docs/screenshots/chat.png" alt="Chat Interface" width="800"/>
+</p>
+
+Clean, modern chat interface with session persistence, auto-generated titles, and quick prompt buttons.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Native Coding Agent** | `llama-agent` CLI with bash, read, write, edit, glob tools |
+| **Subagents** | Spawn specialized agents for complex tasks (explore, plan, bash) |
+| **HTTP API Server** | `llama-agent-server` with SSE streaming and permission handling |
+| **SvelteKit Web UI** | Modern interface with glassmorphism design |
+| **Model Hot-Swap** | Switch models without restarting the server |
+| **HuggingFace Integration** | Search, download, and manage models from the UI |
+| **System Dashboard** | Real-time GPU/RAM/Disk monitoring |
+| **Session Persistence** | SQLite-backed chat history with auto-generated titles |
+| **Skills System** | Extensible prompt modules following [agentskills.io](https://agentskills.io) |
+| **MCP Support** | Model Context Protocol server integration |
+| **Docker Ready** | CUDA-optimized compose with dev hot-reload |
+
+### Quick Start (This Fork)
+
+```bash
+# Clone and build
+git clone https://github.com/wrp1979/llama-agent.git
+cd llama-agent
+
+# Option 1: Docker (recommended for full UI)
+docker compose up -d
+
+# Option 2: CLI only
+cmake -B build -DLLAMA_CURL=ON -DGGML_CUDA=ON
+cmake --build build --target llama-agent -j
+./build/bin/llama-agent -hf unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+```
+
+The web UI will be available at `http://localhost:5173`
+
+---
+
+# llama.cpp (Upstream)
+
+![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
 
 [Manifesto](https://github.com/ggml-org/llama.cpp/discussions/205) / [ggml](https://github.com/ggml-org/ggml) / [ops](https://github.com/ggml-org/llama.cpp/blob/master/docs/ops.md)
 
