@@ -115,7 +115,7 @@ Subagents are specialized child agents that handle complex tasks independently, 
 
 ### Why Subagents?
 
-Without subagents, every file read and search pollutes your main context. With subagents, only a summary enters main context—the detailed exploration is discarded afterward.
+Without subagents, every file read and search pollutes your main context. With subagents, only a summary enters main context. The detailed exploration is discarded afterward.
 
 ```
 Main context:
@@ -162,7 +162,7 @@ Main context:
 
 **Memory Efficiency**
 
-Subagents share the model—no additional VRAM is used:
+Subagents share the model, so no additional VRAM is used:
 
 | Resource | Main Agent | Subagent | Total |
 |----------|------------|----------|-------|
@@ -228,8 +228,8 @@ Skills are reusable prompt modules that extend the agent's capabilities. They fo
 | `--skills-path PATH` | Add custom skills directory |
 
 Skills are discovered from:
-1. `./.llama-agent/skills/` — Project-local skills
-2. `~/.llama-agent/skills/` — User-global skills
+1. `./.llama-agent/skills/` - Project-local skills
+2. `~/.llama-agent/skills/` - User-global skills
 3. Custom paths via `--skills-path`
 
 <details>
@@ -286,7 +286,7 @@ Markdown instructions for the agent...
 2. **Activation**: When your request matches a skill's description, the agent reads the full `SKILL.md`
 3. **Execution**: The agent follows the skill's instructions, optionally running scripts from `scripts/`
 
-This "progressive disclosure" keeps context lean—only activated skills consume tokens.
+This "progressive disclosure" keeps context lean: only activated skills consume tokens.
 
 </details>
 
@@ -323,9 +323,9 @@ Create an `AGENTS.md` file in your repository root:
 
 **Search Locations (in precedence order)**
 
-1. `./AGENTS.md` — Current working directory (highest precedence)
-2. `../AGENTS.md`, `../../AGENTS.md`, ... — Parent directories up to git root
-3. `~/.llama-agent/AGENTS.md` — Global user preferences (lowest precedence)
+1. `./AGENTS.md` - Current working directory (highest precedence)
+2. `../AGENTS.md`, `../../AGENTS.md`, ... - Parent directories up to git root
+3. `~/.llama-agent/AGENTS.md` - Global user preferences (lowest precedence)
 
 **Monorepo Support**
 
@@ -406,29 +406,15 @@ When prompted: `y` (yes), `n` (no), `a` (always allow), `d` (deny always)
 | `--yolo` | Skip all permission prompts (dangerous!) |
 | `--max-iterations N` | Max agent iterations (default: 50, max: 1000) |
 
-<details>
-<summary><strong>Safety features</strong></summary>
+### Safety Features
 
 - **Sensitive file blocking**: Automatically blocks access to `.env`, `*.key`, `*.pem`, credentials files
 - **External directory warnings**: Prompts before accessing files outside the project
 - **Dangerous command detection**: Warns for `rm -rf`, `sudo`, `curl|bash`, etc.
 - **Doom-loop detection**: Detects and blocks repeated identical tool calls
 
-</details>
-
-<details>
-<summary><strong>YOLO mode warning</strong></summary>
-
-Skip all permission prompts:
-
-```bash
-./build/bin/llama-agent -m model.gguf --yolo
-```
-
 > [!CAUTION]
 > **YOLO mode is extremely dangerous.** The agent will execute any command without confirmation, including destructive operations like `rm -rf`. This is especially risky with smaller models that have weaker instruction-following and may hallucinate unsafe commands. Only use this flag if you fully trust the model and understand the risks.
-
-</details>
 
 ## HTTP API Server
 
