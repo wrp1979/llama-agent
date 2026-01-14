@@ -32,10 +32,12 @@ services:
       - ./update-status.sh:/app/update-status.sh:ro
       - ./model-manager.sh:/app/model-manager.sh:ro
       - ./download-manager.py:/app/download-manager.py:ro
+      - ./get-model-context.py:/app/get-model-context.py:ro
     environment:
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=8081
       - LLAMA_ARG_N_GPU_LAYERS=20
+      - LLAMA_CTX_SIZE=32768  # Context size override (adjust as needed)
       - CUDA_VISIBLE_DEVICES=0
       - HF_HUB_ENABLE_HF_TRANSFER=1
     entrypoint: ["/bin/bash", "/app/entrypoint.sh"]
@@ -64,8 +66,9 @@ services:
     volumes:
       - ./ui:/app
       - /app/node_modules
-      - ./config:/app/config:ro
+      - ./config:/app/config
       - ./data:/data
+      - ./models:/models
     environment:
       - NODE_ENV=development
       - DB_PATH=/data/llama-agent.db

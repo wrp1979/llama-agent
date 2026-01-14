@@ -8,17 +8,17 @@ import json
 import os
 import sys
 import time
-import threading
-from pathlib import Path
+
+import requests
 
 try:
-    from huggingface_hub import hf_hub_download, HfApi
+    from huggingface_hub import HfApi, hf_hub_url
     from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
 except ImportError:
     print("Installing huggingface_hub...")
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "huggingface_hub", "-q"])
-    from huggingface_hub import hf_hub_download, HfApi
+    from huggingface_hub import HfApi, hf_hub_url
     from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
 
 CONFIG_DIR = os.environ.get('CONFIG_DIR', '/config')
@@ -51,93 +51,6 @@ def write_status(status: str, repo_id: str = '', filename: str = '',
         print(f"Failed to write status: {e}")
 
 
-class DownloadProgressCallback:
-    """Track download progress."""
-
-    def __init__(self, repo_id: str, filename: str, total_size: int = 0):
-        self.repo_id = repo_id
-        self.filename = filename
-        self.total_size = total_size
-        self.downloaded = 0
-        self.start_time = time.time()
-        self.last_update = 0
-
-    def __call__(self, chunk_size: int):
-        global cancel_requested
-
-        self.downloaded += chunk_size
-        now = time.time()
-
-        # Update status every 0.5 seconds
-        if now - self.last_update < 0.5:
-            return
-
-        self.last_update = now
-        elapsed = now - self.start_time
-
-        # Calculate progress
-        if self.total_size > 0:
-            progress = (self.downloaded / self.total_size) * 100
-        else:
-            progress = 0
-
-        # Calculate speed
-        if elapsed > 0:
-            speed_bytes = self.downloaded / elapsed
-            if speed_bytes >= 1e6:
-                speed = f"{speed_bytes / 1e6:.1f} MB/s"
-            else:
-                speed = f"{speed_bytes / 1e3:.1f} KB/s"
-
-            # Calculate ETA
-            if speed_bytes > 0 and self.total_size > 0:
-                remaining = self.total_size - self.downloaded
-                eta_seconds = remaining / speed_bytes
-                if eta_seconds < 60:
-                    eta = f"{int(eta_seconds)}s"
-                elif eta_seconds < 3600:
-                    eta = f"{int(eta_seconds / 60)}m {int(eta_seconds % 60)}s"
-                else:
-                    eta = f"{int(eta_seconds / 3600)}h {int((eta_seconds % 3600) / 60)}m"
-            else:
-                eta = "calculating..."
-        else:
-            speed = "calculating..."
-            eta = "calculating..."
-
-        # Format downloaded size
-        if self.downloaded >= 1e9:
-            downloaded_str = f"{self.downloaded / 1e9:.2f} GB"
-        elif self.downloaded >= 1e6:
-            downloaded_str = f"{self.downloaded / 1e6:.1f} MB"
-        else:
-            downloaded_str = f"{self.downloaded / 1e3:.1f} KB"
-
-        # Format total size
-        if self.total_size >= 1e9:
-            total_str = f"{self.total_size / 1e9:.2f} GB"
-        elif self.total_size >= 1e6:
-            total_str = f"{self.total_size / 1e6:.1f} MB"
-        else:
-            total_str = f"{self.total_size / 1e3:.1f} KB"
-
-        message = f"Downloading: {downloaded_str} / {total_str}"
-
-        write_status(
-            'downloading',
-            self.repo_id,
-            self.filename,
-            progress,
-            speed,
-            eta,
-            message
-        )
-
-        # Check for cancel
-        if cancel_requested:
-            raise KeyboardInterrupt("Download cancelled by user")
-
-
 def get_file_size(repo_id: str, filename: str) -> int:
     """Get file size from HuggingFace."""
     try:
@@ -149,6 +62,84 @@ def get_file_size(repo_id: str, filename: str) -> int:
     except Exception as e:
         print(f"Failed to get file size: {e}")
     return 0
+
+
+def download_with_progress(url: str, dest_path: str, repo_id: str, filename: str, total_size: int) -> bool:
+    """Download file with progress tracking using requests streaming."""
+    global cancel_requested
+
+    start_time = time.time()
+    downloaded = 0
+    last_update = 0
+
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+
+        # Get size from headers if not provided
+        if total_size == 0:
+            total_size = int(response.headers.get('content-length', 0))
+
+        with open(dest_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                if cancel_requested:
+                    raise KeyboardInterrupt("Download cancelled")
+
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    # Update status every 0.5 seconds
+                    now = time.time()
+                    if now - last_update >= 0.5:
+                        last_update = now
+                        elapsed = now - start_time
+
+                        # Calculate progress
+                        progress = (downloaded / total_size * 100) if total_size > 0 else 0
+
+                        # Calculate speed
+                        speed_bytes = downloaded / elapsed if elapsed > 0 else 0
+                        if speed_bytes >= 1e6:
+                            speed = f"{speed_bytes / 1e6:.1f} MB/s"
+                        else:
+                            speed = f"{speed_bytes / 1e3:.1f} KB/s"
+
+                        # Calculate ETA
+                        if speed_bytes > 0 and total_size > 0:
+                            remaining = total_size - downloaded
+                            eta_seconds = remaining / speed_bytes
+                            if eta_seconds < 60:
+                                eta = f"{int(eta_seconds)}s"
+                            elif eta_seconds < 3600:
+                                eta = f"{int(eta_seconds / 60)}m {int(eta_seconds % 60)}s"
+                            else:
+                                eta = f"{int(eta_seconds / 3600)}h {int((eta_seconds % 3600) / 60)}m"
+                        else:
+                            eta = "calculating..."
+
+                        # Format sizes
+                        if downloaded >= 1e9:
+                            dl_str = f"{downloaded / 1e9:.2f} GB"
+                        else:
+                            dl_str = f"{downloaded / 1e6:.1f} MB"
+
+                        if total_size >= 1e9:
+                            total_str = f"{total_size / 1e9:.2f} GB"
+                        else:
+                            total_str = f"{total_size / 1e6:.1f} MB"
+
+                        write_status(
+                            'downloading', repo_id, filename,
+                            progress, speed, eta,
+                            f"Downloading: {dl_str} / {total_str}"
+                        )
+
+        return True
+
+    except requests.exceptions.RequestException as e:
+        print(f"Download error: {e}")
+        return False
 
 
 def download_model(repo_id: str, filename: str) -> bool:
@@ -164,31 +155,17 @@ def download_model(repo_id: str, filename: str) -> bool:
         total_size = get_file_size(repo_id, filename)
         print(f"File size: {total_size / 1e9:.2f} GB")
 
-        # Create progress callback
-        progress_callback = DownloadProgressCallback(repo_id, filename, total_size)
+        # Get download URL from HuggingFace
+        url = hf_hub_url(repo_id=repo_id, filename=filename)
+        print(f"Download URL: {url}")
 
-        # Download the file
-        local_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            local_dir=MODELS_DIR,
-            local_dir_use_symlinks=False,
-        )
+        # Download with progress
+        dest_path = os.path.join(MODELS_DIR, filename)
 
-        # Move to models root if in subdirectory
-        final_path = os.path.join(MODELS_DIR, filename)
-        if local_path != final_path:
-            import shutil
-            shutil.move(local_path, final_path)
-            # Clean up empty directories
-            try:
-                subdir = os.path.dirname(local_path)
-                if subdir != MODELS_DIR:
-                    os.removedirs(subdir)
-            except:
-                pass
+        if not download_with_progress(url, dest_path, repo_id, filename, total_size):
+            raise Exception("Download failed")
 
-        print(f"Download complete: {final_path}")
+        print(f"Download complete: {dest_path}")
         write_status('completed', repo_id, filename, 100, '', '', f'Download complete: {filename}')
         return True
 

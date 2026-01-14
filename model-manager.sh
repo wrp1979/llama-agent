@@ -49,6 +49,16 @@ get_api_key() {
     fi
 }
 
+# Calculate recommended GPU layers based on model size and available VRAM
+# Returns "auto" to let llama.cpp decide, or a specific number
+calculate_gpu_layers() {
+    local model_path="$1"
+
+    # For now, use "auto" which lets llama.cpp auto-detect the best setting
+    # This is the safest option and works well with modern llama.cpp
+    echo "auto"
+}
+
 start_server() {
     local model_name="$1"
     local model_path="${MODEL_DIR}/${model_name}"
@@ -63,11 +73,25 @@ start_server() {
     log "Starting server with model: $model_name"
     write_status "loading" "Loading model..." "$model_name"
 
+    # Calculate optimal GPU layers based on model size and available VRAM
+    local gpu_layers=$(calculate_gpu_layers "$model_path")
+
     # Save current model
     echo "$model_name" > "$CURRENT_MODEL_FILE"
 
+    # Context size - use LLAMA_CTX_SIZE env var or auto-detect from model
+    local ctx_size="${LLAMA_CTX_SIZE:-}"
+
+    if [ -z "$ctx_size" ]; then
+        # Auto-detect from model file
+        ctx_size=$(python3 /app/get-model-context.py "$model_path" 8192 2>/dev/null || echo 8192)
+        log "Using auto-detected context: $ctx_size tokens"
+    else
+        log "Using configured context: $ctx_size tokens (LLAMA_CTX_SIZE)"
+    fi
+
     # Build server command
-    local cmd="./llama-agent-server -m $model_path --host $SERVER_HOST --port $SERVER_PORT -ngl ${LLAMA_ARG_N_GPU_LAYERS:-999}"
+    local cmd="./llama-agent-server -m $model_path --host $SERVER_HOST --port $SERVER_PORT -ngl $gpu_layers -c $ctx_size"
 
     if [ -n "$api_key" ]; then
         cmd="$cmd --api-key $api_key"

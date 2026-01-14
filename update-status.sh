@@ -68,9 +68,13 @@ for model in "$MODELS_DIR"/*.gguf; do
 done
 models_json+="]"
 
-# Get active model
+# Get active model - read from current-model file (updated by model-manager)
 active_model=""
-if [ -n "$MODEL_PATH" ]; then
+CURRENT_MODEL_FILE="/config/current-model"
+if [ -f "$CURRENT_MODEL_FILE" ]; then
+    active_model=$(cat "$CURRENT_MODEL_FILE")
+elif [ -n "$MODEL_PATH" ]; then
+    # Fallback to MODEL_PATH if file doesn't exist yet
     active_model=$(basename "$MODEL_PATH")
 fi
 
