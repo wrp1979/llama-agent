@@ -1,9 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-
-const DOWNLOAD_REQUEST_FILE = '/app/config/download-model.request';
-const DOWNLOAD_STATUS_FILE = '/app/config/download-model.status';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
+import { DOWNLOAD_REQUEST_FILE, DOWNLOAD_STATUS_FILE, CONFIG_DIR } from '$lib/server/config';
 
 export interface DownloadRequest {
   repoId: string;
@@ -67,6 +66,11 @@ export const POST: RequestHandler = async ({ request }) => {
 
     if (!repoId || !filename) {
       return json({ error: 'repoId and filename are required' }, { status: 400 });
+    }
+
+    // Ensure config directory exists
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
     }
 
     // Write the download request - the download manager will pick it up

@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readFileSync, existsSync } from 'fs';
-
-const STATUS_FILE = '/app/config/system-status.json';
+import { SYSTEM_STATUS_FILE } from '$lib/server/config';
 
 export interface SystemStatus {
   timestamp: number;
@@ -37,11 +36,11 @@ export interface SystemStatus {
 // GET /api/system/status - Get system status
 export const GET: RequestHandler = async () => {
   try {
-    if (!existsSync(STATUS_FILE)) {
+    if (!existsSync(SYSTEM_STATUS_FILE)) {
       return json({ error: 'Status file not found', status: null }, { status: 404 });
     }
 
-    const content = readFileSync(STATUS_FILE, 'utf-8');
+    const content = readFileSync(SYSTEM_STATUS_FILE, 'utf-8');
     const status: SystemStatus = JSON.parse(content);
 
     // Check if status is stale (more than 30 seconds old)

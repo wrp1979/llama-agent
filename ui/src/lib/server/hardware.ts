@@ -1,6 +1,5 @@
 import { readFileSync, existsSync } from 'fs';
-
-const STATUS_FILE = '/app/config/system-status.json';
+import { SYSTEM_SYSTEM_STATUS_FILE } from './config';
 
 export interface HardwareInfo {
   gpu: {
@@ -45,11 +44,11 @@ const RAM_OVERHEAD_MB = 2000;   // ~2GB for system overhead
 
 export function getHardwareInfo(): HardwareInfo | null {
   try {
-    if (!existsSync(STATUS_FILE)) {
+    if (!existsSync(SYSTEM_STATUS_FILE)) {
       return null;
     }
 
-    const content = readFileSync(STATUS_FILE, 'utf-8');
+    const content = readFileSync(SYSTEM_STATUS_FILE, 'utf-8');
     const status = JSON.parse(content);
 
     return {

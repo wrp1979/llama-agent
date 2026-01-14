@@ -1,9 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-
-const REQUEST_FILE = '/app/config/switch-model.request';
-const STATUS_FILE = '/app/config/switch-model.status';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
+import { SWITCH_MODEL_REQUEST_FILE, SWITCH_MODEL_STATUS_FILE, CONFIG_DIR } from '$lib/server/config';
 
 export interface SwitchModelStatus {
   status: 'idle' | 'switching' | 'loading' | 'ready' | 'error';
@@ -15,11 +13,11 @@ export interface SwitchModelStatus {
 // GET /api/system/switch-model - Get switch status
 export const GET: RequestHandler = async () => {
   try {
-    if (!existsSync(STATUS_FILE)) {
+    if (!existsSync(SWITCH_MODEL_STATUS_FILE)) {
       return json({ status: { status: 'idle', message: 'No switch in progress', model: '', timestamp: 0 } });
     }
 
-    const content = readFileSync(STATUS_FILE, 'utf-8');
+    const content = readFileSync(SWITCH_MODEL_STATUS_FILE, 'utf-8');
     const status: SwitchModelStatus = JSON.parse(content);
     return json({ status });
   } catch (error) {
@@ -38,8 +36,13 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ error: 'Model name is required' }, { status: 400 });
     }
 
+    // Ensure config directory exists
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+
     // Write the request file - the model-manager will pick it up
-    writeFileSync(REQUEST_FILE, model, 'utf-8');
+    writeFileSync(SWITCH_MODEL_REQUEST_FILE, model, 'utf-8');
 
     return json({ success: true, message: `Requested switch to ${model}` });
   } catch (error) {

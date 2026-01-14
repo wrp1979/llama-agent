@@ -1,14 +1,12 @@
 import { json } from '@sveltejs/kit';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 import type { RequestHandler } from './$types';
-
-const CONFIG_PATH = '/app/config/servers.json';
+import { SERVERS_CONFIG_FILE } from '$lib/server/config';
 
 export const GET: RequestHandler = async () => {
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const content = readFileSync(CONFIG_PATH, 'utf-8');
+    if (existsSync(SERVERS_CONFIG_FILE)) {
+      const content = readFileSync(SERVERS_CONFIG_FILE, 'utf-8');
       const config = JSON.parse(content);
       return json(config);
     }

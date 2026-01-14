@@ -3,10 +3,10 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
+import { SERVERS_CONFIG_FILE } from '../config';
 
 // Database path - use /data for Docker, fallback to local for dev
 const DB_PATH = process.env.DB_PATH || '/data/llama-agent.db';
-const CONFIG_PATH = '/app/config/servers.json';
 
 // Ensure directory exists
 const dbDir = dirname(DB_PATH);
@@ -44,8 +44,8 @@ interface ServersConfig {
 
 function readConfigFile(): ServersConfig | null {
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const content = readFileSync(CONFIG_PATH, 'utf-8');
+    if (existsSync(SERVERS_CONFIG_FILE)) {
+      const content = readFileSync(SERVERS_CONFIG_FILE, 'utf-8');
       return JSON.parse(content) as ServersConfig;
     }
   } catch (error) {
